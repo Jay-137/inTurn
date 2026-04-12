@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id       Int      @id @default(autoincrement())
+  name     String
+  email    String   @unique
+  password String
+  role     String   // e.g., "STUDENT", "UNIVERSITY", "RECRUITER"
+  student  Student? // 1-to-1 relation (optional because not all users are students)
+}
+
+model University {
+  id            Int            @id @default(autoincrement())
+  name          String
+  students      Student[]
+  academicUnits AcademicUnit[]
+}
+
+model AcademicUnit {
+  id           Int            @id @default(autoincrement())
+  name         String
+  type         String         // e.g., "School", "Department", "Section"
+  parentId     Int?           
+  universityId Int
+
+  parent       AcademicUnit?  @relation("UnitHierarchy", fields: [parentId], references: [id])
+  children     AcademicUnit[] @relation("UnitHierarchy")
+  university   University     @relation(fields: [universityId], references: [id])
+  students     Student[]
+}
+
+model Student {
+  id                 Int      @id @default(autoincrement())
+  userId             Int      @unique
+  universityId       Int
+  academicUnitId     Int
+  registrationStatus String   // e.g., "PENDING", "APPROVED"
+  cgpa               Float
+  backlogCount       Int
+  placementStatus    String   // e.g., "UNPLACED", "PLACED"
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  university         University @relation(fields: [universityId], references: [id])
+  academicUnit       AcademicUnit @relation(fields: [academicUnitId], references: [id])
+  
+  externalProfiles   ExternalProfile[]
+  skills             StudentSkill[]
+  applications       Application[]
+  placementSelections PlacementSelection[]
+}
+
+model ExternalProfile {
+  id        Int     @id @default(autoincrement())
+  studentId Int
+  platform  String  // e.g., "GitHub", "LeetCode"
+  url       String
+
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model Skill {
+  id            Int     @id @default(autoincrement())
+  name          String
+  type          String  // e.g., "DSA", "Development"
+  parentId      Int?
+
+  parent        Skill?  @relation("SkillHierarchy", fields: [parentId], references: [id])
+  children      Skill[] @relation("SkillHierarchy")
+  
+  studentSkills StudentSkill[]
+  jobSkills     JobSkill[]
+}
+
+model StudentSkill {
+  id        Int     @id @default(autoincrement())
+  studentId Int
+  skillId   Int
+  score     Float   // Normalized 0-1
+
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skill     Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+}
+
+model Job {
+  id                  Int      @id @default(autoincrement())
+  title               String
+  minCgpa             Float
+  maxBacklogs         Int
+  deadline            DateTime
+
+  skills              JobSkill[]
+  applications        Application[]
+  placementSelections PlacementSelection[]
+}
+
+model JobSkill {
+  id       Int    @id @default(autoincrement())
+  jobId    Int
+  skillId  Int
+  priority String // e.g., "HIGH", "MEDIUM", "LOW"
+
+  job      Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill    Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+}
+
+model Application {
+  id          Int    @id @default(autoincrement())
+  jobId       Int
+  studentId   Int
+  matchScore  Float? // Nullable initially, calculated upon application
+  status      String // e.g., "APPLIED", "REJECTED_ELIGIBILITY", "APPROVED"
+
+  job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  student     Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model PlacementSelection {
+  id        Int    @id @default(autoincrement())
+  jobId     Int
+  studentId Int
+  status    String // e.g., "SELECTED_BY_RECRUITER", "APPROVED_BY_UNIVERSITY"
+
+  job       Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
