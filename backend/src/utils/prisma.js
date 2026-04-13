@@ -10,8 +10,9 @@ const adapter = new PrismaMariaDb({
     port: Number(dbUrl.port) || 3306,
     user: dbUrl.username,
     password: dbUrl.password,
-    database: dbUrl.pathname.substring(1), // Removes the leading '/' from the DB name
-    connectionLimit: 10
+    database: dbUrl.pathname.substring(1),
+    connectionLimit: 10,
+    allowPublicKeyRetrieval: true // <--- Add this line right here
 });
 
 const prisma = new PrismaClient({ adapter });

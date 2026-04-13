@@ -2,14 +2,16 @@ import { Card, GradientButton, ProgressBar, Badge } from "./shared";
 import { motion } from "motion/react";
 import {
   BarChart3, TrendingUp, Target, Lightbulb, ArrowUpRight,
-  CheckCircle2, AlertTriangle, ChevronRight
+  CheckCircle2, AlertTriangle, ChevronRight, Loader2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useApp } from "./app-context";
 import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid
 } from "recharts";
 
+// Static skill breakdown — computed from linked platforms in a real implementation
 const radarData = [
   { subject: "DSA", score: 85, fullMark: 100 },
   { subject: "Frontend", score: 92, fullMark: 100 },
@@ -58,14 +60,41 @@ const improvements = [
   },
 ];
 
-const barData = [
-  { name: "GitHub", contributions: 245, repos: 18 },
-  { name: "LeetCode", contributions: 342, repos: 0 },
-  { name: "Codeforces", contributions: 67, repos: 0 },
-];
-
 export function SkillProfile() {
   const navigate = useNavigate();
+  const { studentProfile, authUser, linkedPlatforms } = useApp();
+
+  // Bar chart data: real platforms from linkedPlatforms + static scores
+  const barData = [
+    {
+      name: "GitHub",
+      score: linkedPlatforms.github ? 245 : 0,
+    },
+    {
+      name: "LeetCode",
+      score: linkedPlatforms.leetcode ? 342 : 0,
+    },
+    {
+      name: "Codeforces",
+      score: linkedPlatforms.codeforces ? 67 : 0,
+    },
+    {
+      name: "Kaggle",
+      score: linkedPlatforms.kaggle ? 45 : 0,
+    },
+  ].filter((d) => d.score > 0 || Object.values(linkedPlatforms).some(Boolean));
+
+  const linkedCount = Object.values(linkedPlatforms).filter(Boolean).length;
+
+  // Overall score influenced by real profile data if available
+  const overallScore =
+    studentProfile
+      ? Math.round(
+          (studentProfile.cgpa / 10) * 40 +
+          (linkedCount / 8) * 30 +
+          30
+        )
+      : 78;
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -75,8 +104,15 @@ export function SkillProfile() {
           <div>
             <h2 className="text-xl text-white mb-1">Composite Skill Score</h2>
             <p className="text-indigo-100 text-sm">
-              Based on analysis of your GitHub, LeetCode & Codeforces activity
+              {linkedCount > 0
+                ? `Based on ${linkedCount} linked platform${linkedCount > 1 ? "s" : ""}`
+                : "Link coding platforms to improve your score"}
             </p>
+            {studentProfile && (
+              <p className="text-indigo-200 text-xs mt-1">
+                {studentProfile.user?.name} · CGPA {studentProfile.cgpa.toFixed(1)} · {studentProfile.university?.name}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-6">
             <div className="text-center">
@@ -86,7 +122,7 @@ export function SkillProfile() {
                 transition={{ type: "spring", stiffness: 200, delay: 0.3 }}
                 className="w-20 h-20 rounded-full bg-white/20 backdrop-blur flex items-center justify-center"
               >
-                <span className="text-3xl text-white">78</span>
+                <span className="text-3xl text-white">{overallScore}</span>
               </motion.div>
               <p className="text-xs text-indigo-200 mt-2">Overall Score</p>
             </div>
@@ -95,19 +131,35 @@ export function SkillProfile() {
                 <span className="text-indigo-200">Rank:</span>
                 <Badge variant="priority">Top 15%</Badge>
               </div>
-              <p className="text-xs text-indigo-200">Updated 2 hours ago</p>
+              <p className="text-xs text-indigo-200">Updated recently</p>
             </div>
           </div>
         </div>
       </Card>
 
+      {/* Profile quick stats if available */}
+      {studentProfile && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: "CGPA", value: studentProfile.cgpa.toFixed(1), unit: "/ 10" },
+            { label: "Backlogs", value: String(studentProfile.backlogCount), unit: "active" },
+            { label: "Status", value: studentProfile.registrationStatus, unit: "" },
+            { label: "Placement", value: studentProfile.placementStatus, unit: "" },
+          ].map((s) => (
+            <div key={s.label} className="bg-white rounded-xl border border-border p-4 shadow-sm">
+              <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
+              <p className="text-lg text-gray-900">{s.value} <span className="text-xs text-gray-400">{s.unit}</span></p>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Role Readiness Radar */}
+        {/* Skill Radar */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-gray-900 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-indigo-500" />
-              Skill Radar
+              <BarChart3 className="w-5 h-5 text-indigo-500" /> Skill Radar
             </h3>
           </div>
           <div className="h-[280px]">
@@ -116,14 +168,7 @@ export function SkillProfile() {
                 <PolarGrid stroke="#e5e7eb" />
                 <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12, fill: "#6b7280" }} />
                 <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10, fill: "#9ca3af" }} />
-                <Radar
-                  name="Skills"
-                  dataKey="score"
-                  stroke="#6366f1"
-                  fill="#6366f1"
-                  fillOpacity={0.2}
-                  strokeWidth={2}
-                />
+                <Radar name="Skills" dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.2} strokeWidth={2} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
@@ -133,18 +178,12 @@ export function SkillProfile() {
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-gray-900 flex items-center gap-2">
-              <Target className="w-5 h-5 text-indigo-500" />
-              Role Readiness
+              <Target className="w-5 h-5 text-indigo-500" /> Role Readiness
             </h3>
           </div>
           <div className="space-y-5">
             {roleReadiness.map((r, i) => (
-              <motion.div
-                key={r.role}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.1 }}
-              >
+              <motion.div key={r.role} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-gray-700">{r.role}</span>
                   <div className="flex items-center gap-2">
@@ -159,10 +198,7 @@ export function SkillProfile() {
             ))}
           </div>
           <div className="mt-5 pt-4 border-t border-gray-100">
-            <GradientButton
-              size="sm"
-              onClick={() => navigate("/student/placements")}
-            >
+            <GradientButton size="sm" onClick={() => navigate("/student/placements")}>
               View Matching Jobs <ChevronRight className="w-4 h-4 inline" />
             </GradientButton>
           </div>
@@ -173,18 +209,12 @@ export function SkillProfile() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-gray-900 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-indigo-500" />
-            Detailed Skill Breakdown
+            <TrendingUp className="w-5 h-5 text-indigo-500" /> Detailed Skill Breakdown
           </h3>
         </div>
         <div className="grid md:grid-cols-2 gap-x-8 gap-y-4">
           {detailedSkills.map((s, i) => (
-            <motion.div
-              key={s.name}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: i * 0.05 }}
-            >
+            <motion.div key={s.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}>
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-700">{s.name}</span>
@@ -200,61 +230,52 @@ export function SkillProfile() {
 
       {/* Platform Activity */}
       <Card>
-        <h3 className="text-gray-900 mb-4 flex items-center gap-2">
-          <ArrowUpRight className="w-5 h-5 text-indigo-500" />
-          Platform Activity Summary
+        <h3 className="text-gray-900 mb-1 flex items-center gap-2">
+          <ArrowUpRight className="w-5 h-5 text-indigo-500" /> Platform Activity
         </h3>
-        <div className="h-[220px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={barData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#6b7280" }} />
-              <YAxis tick={{ fontSize: 12, fill: "#9ca3af" }} />
-              <Tooltip
-                contentStyle={{ borderRadius: "12px", border: "1px solid #e5e7eb", fontSize: "12px" }}
-              />
-              <Bar dataKey="contributions" fill="#6366f1" radius={[6, 6, 0, 0]} name="Activity Score" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {linkedCount === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-sm text-gray-400 mb-3">No platforms linked yet.</p>
+            <GradientButton size="sm" onClick={() => navigate("/student/link")}>
+              Link Platforms
+            </GradientButton>
+          </div>
+        ) : (
+          <div className="h-[220px] mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#6b7280" }} />
+                <YAxis tick={{ fontSize: 12, fill: "#9ca3af" }} />
+                <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid #e5e7eb", fontSize: "12px" }} />
+                <Bar dataKey="score" fill="#6366f1" radius={[6, 6, 0, 0]} name="Activity Score" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
 
       {/* Improvement Suggestions */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-gray-900 flex items-center gap-2">
-            <Lightbulb className="w-5 h-5 text-amber-500" />
-            Improvement Suggestions
+            <Lightbulb className="w-5 h-5 text-amber-500" /> Improvement Suggestions
           </h3>
         </div>
         <div className="space-y-4">
           {improvements.map((imp, i) => (
-            <motion.div
-              key={imp.area}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="p-4 rounded-xl border border-gray-100 hover:border-indigo-100 transition-colors"
-            >
+            <motion.div key={imp.area} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="p-4 rounded-xl border border-gray-100 hover:border-indigo-100 transition-colors">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  {imp.impact === "High" ? (
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4 text-blue-500" />
-                  )}
+                  {imp.impact === "High" ? <AlertTriangle className="w-4 h-4 text-amber-500" /> : <CheckCircle2 className="w-4 h-4 text-blue-500" />}
                   <span className="text-sm text-gray-900">{imp.area}</span>
                 </div>
-                <Badge variant={imp.impact === "High" ? "warning" : "info"}>
-                  {imp.impact} Impact
-                </Badge>
+                <Badge variant={imp.impact === "High" ? "warning" : "info"}>{imp.impact} Impact</Badge>
               </div>
               <p className="text-sm text-gray-600 mb-2">{imp.suggestion}</p>
               <div className="flex flex-wrap gap-2">
                 {imp.resources.map((r) => (
-                  <span key={r} className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg cursor-pointer hover:bg-indigo-100 transition-colors">
-                    {r}
-                  </span>
+                  <span key={r} className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg cursor-pointer hover:bg-indigo-100 transition-colors">{r}</span>
                 ))}
               </div>
             </motion.div>

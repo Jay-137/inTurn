@@ -1,8 +1,16 @@
+import { useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "./app-context";
 import {
-  LayoutDashboard, Link2, BarChart3, Briefcase,
-  LogOut, ChevronRight, Bell, Cpu, Shield
+  LayoutDashboard,
+  Link2,
+  BarChart3,
+  Briefcase,
+  LogOut,
+  ChevronRight,
+  Bell,
+  Cpu,
+  Shield,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
@@ -15,15 +23,24 @@ const studentNav = [
 ];
 
 export function Layout() {
-  const { setRole, userName } = useApp();
+  const { logout, userName, isAuthenticated } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const [showNotif, setShowNotif] = useState(false);
 
+  // Auth guard — redirect to login if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate("/login");
+    }
+  }, [isAuthenticated, navigate]);
+
   const handleLogout = () => {
-    setRole(null);
+    logout();
     navigate("/");
   };
+
+  if (!isAuthenticated) return null;
 
   return (
     <div className="min-h-screen flex bg-background font-[Inter,system-ui,sans-serif]">
@@ -36,13 +53,18 @@ export function Layout() {
       >
         {/* Logo */}
         <div className="p-5 border-b border-border">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
+          <div
+            className="flex items-center gap-2.5 cursor-pointer"
+            onClick={() => navigate("/")}
+          >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <Cpu className="w-5 h-5 text-white" />
             </div>
             <div>
               <span className="text-lg text-gray-900">in-turn</span>
-              <span className="text-[10px] text-muted-foreground block -mt-1">Campus Placement Portal</span>
+              <span className="text-[10px] text-muted-foreground block -mt-1">
+                Campus Placement Portal
+              </span>
             </div>
           </div>
         </div>
@@ -72,14 +94,18 @@ export function Layout() {
         {/* User */}
         <div className="p-4 border-t border-border">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-sm">
-              {userName.charAt(0)}
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-sm shrink-0">
+              {userName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm text-gray-900 truncate">{userName}</p>
               <p className="text-xs text-muted-foreground">Student</p>
             </div>
-            <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600 cursor-pointer">
+            <button
+              onClick={handleLogout}
+              title="Log out"
+              className="text-gray-400 hover:text-gray-600 cursor-pointer"
+            >
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -92,7 +118,8 @@ export function Layout() {
         <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-border px-8 py-3 flex items-center justify-between">
           <div>
             <h1 className="text-lg text-gray-900">
-              {studentNav.find((n) => n.path === location.pathname)?.label || "in-turn"}
+              {studentNav.find((n) => n.path === location.pathname)?.label ||
+                "in-turn"}
             </h1>
           </div>
           <div className="flex items-center gap-4">
