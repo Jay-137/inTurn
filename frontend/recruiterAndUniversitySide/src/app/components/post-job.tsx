@@ -90,6 +90,13 @@ interface SkillEntry {
   priority: PriorityLevel;
 }
 
+const PRIORITY_MAP: Record<PriorityLevel, string> = {
+  p1: "HIGH",
+  p2: "MEDIUM",
+  p3: "LOW",
+  good: "GOOD_TO_HAVE",
+};
+
 const priorityConfig: Record<PriorityLevel, { label: string; desc: string; color: string; bg: string; bgDk: string; text: string; textDk: string; border: string; borderDk: string }> = {
   p1: { label: "Priority 1", desc: "Must-have — critical for the role", color: "#22c55e", bg: "bg-green-50", bgDk: "bg-green-500/10", text: "text-green-600", textDk: "text-green-400", border: "border-green-200", borderDk: "border-green-500/20" },
   p2: { label: "Priority 2", desc: "Important — strongly preferred", color: "#3b82f6", bg: "bg-blue-50", bgDk: "bg-blue-500/10", text: "text-blue-600", textDk: "text-blue-400", border: "border-blue-200", borderDk: "border-blue-500/20" },
@@ -108,6 +115,8 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
   const [step, setStep] = useState(0);
   const [showSuccess, setShowSuccess] = useState(false);
   const [savedDraft, setSavedDraft] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Step 0 - Job Details
@@ -115,6 +124,7 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
   const [roleLevel, setRoleLevel] = useState("SDE-1");
   const [location, setLocation] = useState("Remote");
   const [salary, setSalary] = useState("");
+  const [deadline, setDeadline] = useState("");
   const [description, setDescription] = useState("");
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
 
@@ -186,8 +196,45 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
     setTimeout(() => setSavedDraft(false), 2000);
   };
 
-  const handlePost = () => {
-    setShowSuccess(true);
+  const handlePost = async () => {
+    setPosting(true);
+    setPostError("");
+    try {
+      const token = localStorage.getItem("token");
+      const payload = {
+        title: jobTitle,
+        deadline: deadline || new Date(Date.now() + 30 * 86400000).toISOString(), // default 30 days
+        minCgpa: minCGPA ? parseFloat(minCGPA) : 0,
+        maxBacklogs: backlogsAllowed ? 99 : 0,
+        targetBranches: branches,
+        targetYears: gradYears.map(Number),
+        location,
+        salary,
+        type: roleLevel,
+        tags: [],
+        skills: skillEntries.map(s => ({
+          skillName: s.name,
+          priority: PRIORITY_MAP[s.priority]
+        }))
+      };
+      const res = await fetch("http://localhost:3000/api/companies/jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to post job");
+      }
+      setShowSuccess(true);
+    } catch (err: any) {
+      setPostError(err.message || "Failed to post job");
+    } finally {
+      setPosting(false);
+    }
   };
 
   const criteriaTypeLabel = (t: CriteriaType) =>
@@ -276,6 +323,11 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
                 <option>Remote</option><option>On-site</option><option>Hybrid</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>Application Deadline</label>
+            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={inputCls} />
           </div>
 
           <div>
@@ -577,6 +629,7 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
               { label: "Role Level", value: roleLevel },
               { label: "Location", value: location },
               { label: "Salary Range", value: salary || "—" },
+              { label: "Deadline", value: deadline || "30 days from now" },
               ...(uploadedFile ? [{ label: "Uploaded JD", value: uploadedFile }] : []),
             ].map((r) => (
               <div key={r.label} className={`flex justify-between py-2.5 border-b ${dk ? "border-white/5" : "border-gray-100"}`}>
@@ -673,9 +726,12 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
               Next: {steps[step + 1]} <ArrowRight className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={handlePost} className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 transition-colors">
-              <CheckCircle2 className="w-4 h-4" /> Post Job
-            </button>
+            <>
+              <button onClick={handlePost} disabled={posting} className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 transition-colors disabled:opacity-50">
+                <CheckCircle2 className="w-4 h-4" /> {posting ? "Posting…" : "Post Job"}
+              </button>
+              {postError && <p className="text-xs text-red-500 mt-1">{postError}</p>}
+            </>
           )}
         </div>
       </div>

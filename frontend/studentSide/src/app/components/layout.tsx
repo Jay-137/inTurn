@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "./app-context";
 import {
@@ -11,19 +10,22 @@ import {
   Bell,
   Cpu,
   Shield,
+  FileText,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { studentApi, type Notification } from "../../lib/api";
 
 const studentNav = [
   { label: "Dashboard", path: "/student", icon: LayoutDashboard },
   { label: "Placement Drives", path: "/student/placements", icon: Briefcase },
   { label: "Skill Proof", path: "/student/link", icon: Shield },
   { label: "Skill Profile", path: "/student/profile", icon: BarChart3 },
+  { label: "Extra Data", path: "/student/data", icon: FileText },
 ];
 
 export function Layout() {
-  const { logout, userName, isAuthenticated } = useApp();
+  const { logout, userName, isAuthenticated, authUser, setStudentProfile } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const [showNotif, setShowNotif] = useState(false);
@@ -34,6 +36,35 @@ export function Layout() {
       navigate("/login");
     }
   }, [isAuthenticated, navigate]);
+
+  // Sync Student Profile on mount
+  useEffect(() => {
+    if (isAuthenticated && authUser) {
+      studentApi.getProfile(authUser.id)
+        .then(setStudentProfile)
+        .catch(err => {
+          console.error("Failed to sync profile:", err);
+          // If 404, it just means they haven't set up academic data yet, which is fine
+        });
+    }
+  }, [isAuthenticated, authUser, setStudentProfile]);
+
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      studentApi.getNotifications().then(setNotifications).catch(console.error);
+    }
+  }, [isAuthenticated]);
+
+  const markRead = async (id: number) => {
+    try {
+      await studentApi.markNotificationRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -129,25 +160,37 @@ export function Layout() {
                 className="relative p-2 rounded-xl hover:bg-gray-100 cursor-pointer"
               >
                 <Bell className="w-5 h-5 text-gray-600" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full" />
+                {notifications.some(n => !n.isRead) && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full" />
+                )}
               </button>
               {showNotif && (
                 <motion.div
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute right-0 top-12 w-72 bg-white rounded-xl shadow-xl border border-border p-4 z-50"
+                  className="absolute right-0 top-12 w-72 max-h-[400px] overflow-y-auto bg-white rounded-xl shadow-xl border border-border p-4 z-50"
                 >
-                  <p className="text-sm text-gray-700 mb-2">Notifications</p>
+                  <p className="text-sm text-gray-700 mb-2 font-medium">Notifications</p>
                   <div className="space-y-2">
-                    <div className="p-2 bg-indigo-50 rounded-lg text-xs text-indigo-700">
-                      New placement drive: TechCorp is visiting on Apr 20!
-                    </div>
-                    <div className="p-2 bg-emerald-50 rounded-lg text-xs text-emerald-700">
-                      Your eligibility status has been confirmed for 5 drives.
-                    </div>
-                    <div className="p-2 bg-gray-50 rounded-lg text-xs text-gray-600">
-                      Your skill profile was updated successfully.
-                    </div>
+                    {notifications.length > 0 ? notifications.map(n => (
+                      <div 
+                        key={n.id} 
+                        onClick={() => !n.isRead && markRead(n.id)}
+                        className={`p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                          n.isRead 
+                            ? "bg-gray-50 text-gray-500" 
+                            : n.type === "success" 
+                              ? "bg-emerald-50 text-emerald-700 font-medium" 
+                              : n.type === "warning"
+                                ? "bg-amber-50 text-amber-700 font-medium"
+                                : "bg-indigo-50 text-indigo-700 font-medium"
+                        }`}
+                      >
+                        {n.message}
+                      </div>
+                    )) : (
+                      <div className="text-xs text-gray-400 text-center py-4">No notifications</div>
+                    )}
                   </div>
                 </motion.div>
               )}

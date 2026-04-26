@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Briefcase, Users, UserCheck, TrendingUp,
   Plus, CheckCircle2, Clock, XCircle,
@@ -10,6 +10,7 @@ import { useTheme } from "./theme-context";
 import { useNavigate } from "react-router";
 import { PostJob } from "./post-job";
 import { JobPostings } from "./job-postings";
+import { Shortlisted, PlacementAnalytics } from "./recruiter-subpages";
 
 /* ─── Sidebar Config ─── */
 const sidebarNav = [
@@ -20,97 +21,7 @@ const sidebarNav = [
   { label: "Placement Analytics", icon: BarChart3, id: "analytics" },
 ];
 
-/* ─── Mock Data ─── */
-const summaryCards = [
-  { label: "Active Job Postings", value: "3", sub: "All positions open", icon: Briefcase, color: "blue" },
-  { label: "Total Applicants", value: "107", sub: "+23 this week", icon: Users, color: "indigo" },
-  { label: "Shortlisted", value: "17", sub: "Ready for interview", icon: UserCheck, color: "green" },
-  { label: "Avg Match Score", value: "76%", sub: "+4% vs last month", icon: TrendingUp, color: "amber" },
-];
-
-const activeJobs = [
-  {
-    title: "SDE-1 Frontend Engineer",
-    posted: "Posted Feb 20, 2026",
-    status: "Active",
-    applicants: 47,
-    shortlisted: 8,
-    pending: 12,
-    rejected: 27,
-  },
-  {
-    title: "SDE Intern - Backend",
-    posted: "Posted Feb 18, 2026",
-    status: "Active",
-    applicants: 32,
-    shortlisted: 5,
-    pending: 9,
-    rejected: 18,
-  },
-  {
-    title: "Fresher - Full Stack Developer",
-    posted: "Posted Feb 15, 2026",
-    status: "Active",
-    applicants: 28,
-    shortlisted: 4,
-    pending: 8,
-    rejected: 16,
-  },
-];
-
-const applicationStatus = [
-  { name: "Shortlisted", value: 17, color: "#22c55e" },
-  { name: "Pending", value: 29, color: "#6366f1" },
-  { name: "Rejected", value: 61, color: "#ef4444" },
-];
-
-const weeklyTrend = [
-  { day: "Mon", apps: 8 },
-  { day: "Tue", apps: 16 },
-  { day: "Wed", apps: 22 },
-  { day: "Thu", apps: 26 },
-  { day: "Fri", apps: 30 },
-  { day: "Sat", apps: 7 },
-  { day: "Sun", apps: 5 },
-];
-
-type TrendUnit = "days" | "weeks" | "months";
-
-function generateTrendData(count: number, unit: TrendUnit): { label: string; apps: number }[] {
-  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const seed = (i: number) => Math.floor(((Math.sin(i * 31 + count * 7) + 1) / 2) * 25 + 5);
-
-  if (unit === "days") {
-    const today = new Date(2026, 3, 7); // Apr 7, 2026
-    return Array.from({ length: count }, (_, i) => {
-      const d = new Date(today);
-      d.setDate(d.getDate() - (count - 1 - i));
-      const label = count <= 7 ? dayNames[d.getDay()] : `${monthNames[d.getMonth()]} ${d.getDate()}`;
-      return { label, apps: seed(i) };
-    });
-  }
-  if (unit === "weeks") {
-    return Array.from({ length: count }, (_, i) => ({
-      label: `Week ${i + 1}`,
-      apps: seed(i) * 5 + 30,
-    }));
-  }
-  // months
-  const today = new Date(2026, 3, 7);
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date(today);
-    d.setMonth(d.getMonth() - (count - 1 - i));
-    return { label: monthNames[d.getMonth()], apps: seed(i) * 10 + 80 };
-  });
-}
-
-const recentApplicants = [
-  { name: "Priya Sharma", role: "SDE-1 Frontend", time: "10 min ago", score: 94, color: "bg-blue-500" },
-  { name: "Rahul Verma", role: "SDE Intern Backend", time: "25 min ago", score: 88, color: "bg-red-500" },
-  { name: "Ananya Patel", role: "Fresher Full Stack", time: "1 hour ago", score: 82, color: "bg-amber-500" },
-  { name: "Vikram Singh", role: "SDE-1 Frontend", time: "2 hours ago", score: 76, color: "bg-green-500" },
-];
+// Removed static mock data arrays.
 
 const colorMap: Record<string, { bg: string; bgDk: string; text: string; textDk: string }> = {
   blue:   { bg: "bg-blue-50",   bgDk: "bg-blue-500/10",   text: "text-blue-600",   textDk: "text-blue-400" },
@@ -276,10 +187,29 @@ export function RecruiterDashboard() {
   const [search, setSearch] = useState("");
   const [activeNav, setActiveNav] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [trendCount, setTrendCount] = useState(7);
-  const [trendUnit, setTrendUnit] = useState<TrendUnit>("days");
+  const [dashboardData, setDashboardData] = useState<any>(null);
 
-  const trendChartData = generateTrendData(trendCount, trendUnit);
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("http://localhost:3000/api/companies/dashboard", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDashboardData(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch dashboard data", err);
+      }
+    };
+    if (activeNav === "dashboard") {
+      fetchDashboard();
+    }
+  }, [activeNav]);
+
+  const trendChartData = dashboardData?.weeklyTrend || [];
 
   const card = `rounded-xl border ${dk ? "bg-[#111116] border-white/10" : "bg-white border-gray-300"}`;
   const muted = dk ? "text-gray-400" : "text-gray-500";
@@ -329,18 +259,23 @@ export function RecruiterDashboard() {
             <PostJob onNavigate={setActiveNav} />
           ) : activeNav === "job-postings" ? (
             <JobPostings dk={dk} card={card} heading={heading} muted={muted} onNavigate={setActiveNav} />
+          ) : activeNav === "shortlisted" ? (
+            <Shortlisted />
+          ) : activeNav === "analytics" ? (
+            <PlacementAnalytics />
           ) : (
           <>
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {summaryCards.map((c) => {
-              const cl = colorMap[c.color];
+            {(dashboardData?.summaryCards || []).map((c: any) => {
+              const cl = colorMap[c.color] || colorMap.blue;
+              const IconComp = c.label.includes("Job") ? Briefcase : c.label.includes("App") ? Users : c.label.includes("Short") ? UserCheck : TrendingUp;
               return (
                 <div key={c.label} className={`${card} p-5`}>
                   <div className="flex items-center justify-between mb-3">
                     <p className={`text-xs ${muted}`}>{c.label}</p>
                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${dk ? cl.bgDk : cl.bg}`}>
-                      <c.icon className={`w-4 h-4 ${dk ? cl.textDk : cl.text}`} />
+                      <IconComp className={`w-4 h-4 ${dk ? cl.textDk : cl.text}`} />
                     </div>
                   </div>
                   <p className={`text-2xl tracking-tight ${heading}`}>{c.value}</p>
@@ -362,10 +297,10 @@ export function RecruiterDashboard() {
                 </button>
               </div>
               <div className="space-y-0">
-                {activeJobs.map((job, i) => (
+                {(dashboardData?.activeJobs || []).map((job: any, i: number) => (
                   <div
                     key={job.title}
-                    className={`py-4 ${i < activeJobs.length - 1 ? `border-b ${dk ? "border-white/5" : "border-gray-100"}` : ""}`}
+                    className={`py-4 ${i < (dashboardData?.activeJobs || []).length - 1 ? `border-b ${dk ? "border-white/5" : "border-gray-100"}` : ""}`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div>
@@ -407,10 +342,10 @@ export function RecruiterDashboard() {
               <div className={`${card} p-6`}>
                 <h2 className={`text-sm mb-2 ${heading}`}>Application Status</h2>
                 <div className="flex items-center justify-center py-6">
-                  <DonutChart data={applicationStatus} size={160} strokeWidth={22} />
+                  <DonutChart data={dashboardData?.applicationStatus || []} size={160} strokeWidth={22} />
                 </div>
                 <div className="flex items-center justify-center gap-5 mt-1">
-                  {applicationStatus.map((s) => (
+                  {(dashboardData?.applicationStatus || []).map((s: any) => (
                     <div key={s.name} className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
                       <span className={`text-xs ${muted}`}>{s.name} ({s.value})</span>
@@ -426,7 +361,7 @@ export function RecruiterDashboard() {
                   <button className="text-xs text-blue-600 hover:text-blue-500 transition-colors">View All</button>
                 </div>
                 <div className="space-y-3">
-                  {recentApplicants.map((a) => (
+                  {(dashboardData?.recentApplicants || []).map((a: any) => (
                     <div key={a.name} className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-full ${a.color} flex items-center justify-center text-white text-xs shrink-0`}>
                         {a.name[0]}
@@ -459,41 +394,7 @@ export function RecruiterDashboard() {
                 <h2 className={`text-sm ${heading}`}>Application Trend</h2>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-xs ${muted}`}>Last</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={trendUnit === "days" ? 30 : trendUnit === "weeks" ? 12 : 12}
-                  value={trendCount}
-                  onChange={(e) => {
-                    const v = Math.max(1, Math.min(Number(e.target.value) || 1, trendUnit === "days" ? 30 : 12));
-                    setTrendCount(v);
-                  }}
-                  className={`w-14 text-center text-xs px-2 py-1.5 rounded-lg border outline-none transition-colors ${
-                    dk
-                      ? "bg-white/[0.04] border-white/10 text-white focus:border-blue-500"
-                      : "bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500"
-                  }`}
-                />
-                <select
-                  value={trendUnit}
-                  onChange={(e) => {
-                    const unit = e.target.value as TrendUnit;
-                    setTrendUnit(unit);
-                    const maxVal = unit === "days" ? 30 : 12;
-                    if (trendCount > maxVal) setTrendCount(maxVal);
-                  }}
-                  className={`text-xs px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer transition-colors appearance-none pr-7 ${
-                    dk
-                      ? "bg-white/[0.04] border-white/10 text-white focus:border-blue-500"
-                      : "bg-gray-50 border-gray-300 text-gray-900 focus:border-blue-500"
-                  }`}
-                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='${dk ? '%239ca3af' : '%236b7280'}' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
-                >
-                  <option value="days">Days</option>
-                  <option value="weeks">Weeks</option>
-                  <option value="months">Months</option>
-                </select>
+                <span className={`text-xs ${muted}`}>Last 7 Days</span>
               </div>
             </div>
             <CustomBarChart data={trendChartData} dk={dk} />

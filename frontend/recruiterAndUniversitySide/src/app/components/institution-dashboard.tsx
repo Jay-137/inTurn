@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Users, UserCheck, TrendingUp, Briefcase,
   AlertTriangle, FileText, Bell,
@@ -12,6 +12,7 @@ import { EligibleStudents } from "./eligible-students";
 import type { EligibleFilters } from "./eligible-students";
 import { PlacementBranches } from "./placement-branches";
 import type { HierNode } from "./placement-branches";
+import { AllStudents, AllJobs, PendingJobs, AllApplications, RecruitersPage, SimplePlaceholder, DataRequestsPage } from "./institution-subpages";
 
 /* ─── Sidebar Nav Config ─── */
 type NavItem = {
@@ -29,6 +30,7 @@ const sidebarNav: NavItem[] = [
       { label: "All Branches", id: "students-all" },
       { label: "Placement Branches", id: "students-placement" },
       { label: "Eligible Students", id: "students-eligible" },
+      { label: "Data Requests", id: "students-data-requests" },
     ],
   },
   {
@@ -55,42 +57,7 @@ const sidebarNav: NavItem[] = [
   { label: "Settings", icon: Settings, id: "settings" },
 ];
 
-/* ─── Mock Data ─── */
-const summaryCards = [
-  { label: "Total Students", value: "2,847", change: "+12%", icon: Users, color: "blue" },
-  { label: "Placed Students", value: "1,623", change: "+8%", icon: UserCheck, color: "green" },
-  { label: "Placement Rate", value: "57%", change: "+3%", icon: TrendingUp, color: "indigo" },
-  { label: "Active Job Postings", value: "34", change: "+5", icon: Briefcase, color: "amber" },
-];
-
-const actionItems = [
-  { label: "Jobs pending approval", count: 6, icon: FileText, color: "amber" },
-  { label: "Recruiter requests", count: 3, icon: Bell, color: "blue" },
-  { label: "Incomplete student data", count: 14, icon: AlertTriangle, color: "red" },
-];
-
-const recentActivity = [
-  { text: "Company Infosys posted a new job — SDE Intern", time: "10 min ago" },
-  { text: "50 students applied for Backend Developer role", time: "25 min ago" },
-  { text: "Job posting by TCS approved", time: "1 hour ago" },
-  { text: "Google updated their recruiter profile", time: "2 hours ago" },
-  { text: "12 new students completed profile verification", time: "3 hours ago" },
-];
-
-const activeJobs = [
-  { company: "Infosys", role: "SDE Intern", applicants: 82, status: "Open", daysLeft: 14 },
-  { company: "TCS", role: "Data Analyst", applicants: 45, status: "Open", daysLeft: 10 },
-  { company: "Google", role: "Backend Developer", applicants: 128, status: "Closing Soon", daysLeft: 2 },
-  { company: "Amazon", role: "Cloud Engineer", applicants: 67, status: "Open", daysLeft: 8 },
-  { company: "Wipro", role: "QA Engineer", applicants: 31, status: "Closing Soon", daysLeft: 1 },
-];
-
-const topPerformers = [
-  { name: "Aditi Sharma", score: 94, dept: "CSE" },
-  { name: "Rahul Verma", score: 91, dept: "IT" },
-  { name: "Priya Nair", score: 89, dept: "ECE" },
-];
-
+// Mock data removed in favor of dynamic fetch
 const colorMap: Record<string, { bg: string; bgDk: string; text: string; textDk: string }> = {
   blue:   { bg: "bg-blue-50",   bgDk: "bg-blue-500/10",   text: "text-blue-600",   textDk: "text-blue-400" },
   green:  { bg: "bg-green-50",  bgDk: "bg-green-500/10",  text: "text-green-600",  textDk: "text-green-400" },
@@ -235,6 +202,32 @@ export function InstitutionDashboard() {
   // Key to force EligibleStudents remount when filters change
   const [filterKey, setFilterKey] = useState(0);
 
+  const [dashboardData, setDashboardData] = useState<any>({
+    totalApplicants: 0,
+    shortlistRate: 0,
+    offersExtended: 0
+  });
+
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch("http://localhost:3000/api/university/dashboard", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDashboardData(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch university dashboard data", err);
+      }
+    };
+    if (activeNav === "dashboard") {
+      fetchDashboard();
+    }
+  }, [activeNav]);
+
   const handleShowStudents = (filters: EligibleFilters) => {
     setEligibleFilters(filters);
     setFilterKey((k) => k + 1);
@@ -294,6 +287,24 @@ export function InstitutionDashboard() {
             setPath={setPlacementPath}
             onShowStudents={handleShowStudents}
           />
+        ) : activeNav === "students-all" ? (
+          <AllStudents />
+        ) : activeNav === "students-data-requests" ? (
+          <DataRequestsPage />
+        ) : activeNav === "jobs-all" ? (
+          <AllJobs />
+        ) : activeNav === "jobs-pending" ? (
+          <PendingJobs />
+        ) : activeNav === "applications-all" ? (
+          <AllApplications />
+        ) : activeNav === "analytics-students" ? (
+          <SimplePlaceholder title="Student Analytics" desc="Detailed placement graphs and metrics." />
+        ) : activeNav === "analytics-recruiters" ? (
+          <SimplePlaceholder title="Recruiter Analytics" desc="Recruiter engagement and hiring statistics." />
+        ) : activeNav === "recruiters" ? (
+          <RecruitersPage />
+        ) : activeNav === "settings" ? (
+          <SimplePlaceholder title="Settings" desc="Manage institution profile and configuration." />
         ) : (
         <main className="flex-1 px-6 py-8 space-y-6 overflow-y-auto">
           {/* Greeting */}
@@ -304,21 +315,45 @@ export function InstitutionDashboard() {
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {summaryCards.map((c) => {
-              const cl = colorMap[c.color];
-              return (
-                <div key={c.label} className={`${card} p-5`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${dk ? cl.bgDk : cl.bg}`}>
-                      <c.icon className={`w-4 h-4 ${dk ? cl.textDk : cl.text}`} />
-                    </div>
-                    <span className="text-xs text-green-500">{c.change}</span>
-                  </div>
-                  <p className={`text-2xl tracking-tight ${heading}`}>{c.value}</p>
-                  <p className={`text-xs mt-1 ${muted}`}>{c.label}</p>
+            <div className={`${card} p-5`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${dk ? colorMap.blue.bgDk : colorMap.blue.bg}`}>
+                  <Users className={`w-4 h-4 ${dk ? colorMap.blue.textDk : colorMap.blue.text}`} />
                 </div>
-              );
-            })}
+              </div>
+              <p className={`text-2xl tracking-tight ${heading}`}>{dashboardData.totalApplicants}</p>
+              <p className={`text-xs mt-1 ${muted}`}>Total Students</p>
+            </div>
+            
+            <div className={`${card} p-5`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${dk ? colorMap.green.bgDk : colorMap.green.bg}`}>
+                  <UserCheck className={`w-4 h-4 ${dk ? colorMap.green.textDk : colorMap.green.text}`} />
+                </div>
+              </div>
+              <p className={`text-2xl tracking-tight ${heading}`}>{dashboardData.offersExtended}</p>
+              <p className={`text-xs mt-1 ${muted}`}>Placed / Offers</p>
+            </div>
+
+            <div className={`${card} p-5`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${dk ? colorMap.indigo.bgDk : colorMap.indigo.bg}`}>
+                  <TrendingUp className={`w-4 h-4 ${dk ? colorMap.indigo.textDk : colorMap.indigo.text}`} />
+                </div>
+              </div>
+              <p className={`text-2xl tracking-tight ${heading}`}>{dashboardData.shortlistRate}%</p>
+              <p className={`text-xs mt-1 ${muted}`}>Overall Shortlist Rate</p>
+            </div>
+            
+            <div className={`${card} p-5`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${dk ? colorMap.amber.bgDk : colorMap.amber.bg}`}>
+                  <Briefcase className={`w-4 h-4 ${dk ? colorMap.amber.textDk : colorMap.amber.text}`} />
+                </div>
+              </div>
+              <p className={`text-2xl tracking-tight ${heading}`}>--</p>
+              <p className={`text-xs mt-1 ${muted}`}>Active Job Postings</p>
+            </div>
           </div>
 
           {/* Middle row */}
@@ -326,44 +361,16 @@ export function InstitutionDashboard() {
             <div className={`lg:col-span-3 ${card} p-6`}>
               <h2 className={`text-sm mb-4 ${heading}`}>Recent Activity</h2>
               <div className="space-y-0">
-                {recentActivity.map((a, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-3 py-3 ${i < recentActivity.length - 1 ? `border-b ${dk ? "border-white/5" : "border-gray-100"}` : ""}`}
-                  >
-                    <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${dk ? "bg-blue-500" : "bg-blue-600"}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm ${dk ? "text-gray-300" : "text-gray-700"}`}>{a.text}</p>
-                      <p className={`text-xs mt-0.5 ${muted}`}>{a.time}</p>
-                    </div>
-                  </div>
-                ))}
+                <div className="flex items-center gap-3 py-3">
+                    <p className={`text-sm ${muted}`}>Dynamic feed not implemented for prototype.</p>
+                </div>
               </div>
             </div>
 
             <div className={`lg:col-span-2 ${card} p-6`}>
               <h2 className={`text-sm mb-4 ${heading}`}>Needs Attention</h2>
               <div className="space-y-3">
-                {actionItems.map((a) => {
-                  const cl = colorMap[a.color];
-                  return (
-                    <div
-                      key={a.label}
-                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${dk ? "hover:bg-white/[0.03]" : "hover:bg-gray-50"}`}
-                    >
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${dk ? cl.bgDk : cl.bg}`}>
-                        <a.icon className={`w-4 h-4 ${dk ? cl.textDk : cl.text}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${dk ? "text-gray-300" : "text-gray-700"}`}>{a.label}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm ${dk ? cl.textDk : cl.text}`}>{a.count}</span>
-                        <ChevronRight className={`w-3.5 h-3.5 ${muted}`} />
-                      </div>
-                    </div>
-                  );
-                })}
+                <p className={`text-sm ${muted}`}>No items currently need attention.</p>
               </div>
             </div>
           </div>
@@ -386,23 +393,9 @@ export function InstitutionDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {activeJobs.map((j, i) => (
-                    <tr key={i} className={`border-t ${dk ? "border-white/5" : "border-gray-100"}`}>
-                      <td className={`py-3 ${dk ? "text-gray-200" : "text-gray-800"}`}>{j.company}</td>
-                      <td className={`py-3 ${dk ? "text-gray-300" : "text-gray-700"}`}>{j.role}</td>
-                      <td className={`py-3 ${dk ? "text-gray-300" : "text-gray-700"}`}>{j.applicants}</td>
-                      <td className="py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          j.status === "Open"
-                            ? dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600"
-                            : dk ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600"
-                        }`}>
-                          {j.status}
-                        </span>
-                      </td>
-                      <td className={`py-3 text-right ${j.daysLeft <= 2 ? (dk ? "text-amber-400" : "text-amber-600") : muted}`}>{j.daysLeft}d</td>
-                    </tr>
-                  ))}
+                  <tr>
+                    <td colSpan={5} className={`py-3 text-center ${muted}`}>Dynamic active jobs to be mapped.</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -468,28 +461,7 @@ export function InstitutionDashboard() {
               </div>
               <h3 className={`text-xs mb-3 ${muted}`}>Top Performers</h3>
               <div className="space-y-2">
-                {topPerformers.map((s, i) => (
-                  <div
-                    key={s.name}
-                    className={`flex items-center gap-3 p-3 rounded-lg ${dk ? "bg-white/[0.02]" : "bg-gray-50"}`}
-                  >
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${
-                      i === 0
-                        ? dk ? "bg-amber-500/15 text-amber-400" : "bg-amber-50 text-amber-600"
-                        : dk ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"
-                    }`}>
-                      {i + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm ${dk ? "text-gray-200" : "text-gray-800"}`}>{s.name}</p>
-                      <p className={`text-xs ${muted}`}>{s.dept}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Award className={`w-3.5 h-3.5 ${dk ? "text-blue-400" : "text-blue-600"}`} />
-                      <span className={`text-sm ${dk ? "text-gray-200" : "text-gray-800"}`}>{s.score}</span>
-                    </div>
-                  </div>
-                ))}
+                <p className={`text-sm ${muted}`}>To be connected with automated score calculations.</p>
               </div>
             </div>
           </div>

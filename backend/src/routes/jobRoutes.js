@@ -3,8 +3,7 @@ const router = express.Router();
 const jobController = require('../controllers/jobController');
 const { authenticateToken, requireRole } = require('../middlewares/auth');
 
-// POST /api/jobs -> Recruiters only
-router.post('/', authenticateToken, requireRole(['RECRUITER']), jobController.createJob);
+// POST /api/jobs -> Recruiters only (Moved to /api/companies/jobs)
 
 // GET /api/jobs -> Anyone authenticated can view jobs
 router.get('/', authenticateToken, jobController.getJobs);

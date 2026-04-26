@@ -89,7 +89,43 @@ export interface StudentProfile {
     id: number;
     platform: string;
     url: string;
+    stats?: Record<string, any>;
+    isVerified?: boolean;
+    verificationToken?: string;
   }>;
+  experiences?: Array<{
+    id: number;
+    title: string;
+    company: string;
+    type: string;
+    duration: string;
+    description: string;
+    skills: string[];
+  }>;
+  certifications?: Array<{
+    id: number;
+    name: string;
+    platform: string;
+    issueDate: string;
+    credentialUrl: string;
+    verified: boolean;
+  }>;
+  softSkills?: Array<{
+    id: number;
+    name: string;
+  }>;
+  extraData?: Array<{
+    id: number;
+    requestId: number;
+    value: string;
+    status: string;
+    request: {
+      fieldName: string;
+      fieldType: string;
+      isRequired: boolean;
+    };
+  }>;
+  videoResumeUrl?: string;
 }
 
 export interface Job {
@@ -98,6 +134,13 @@ export interface Job {
   minCgpa: number;
   maxBacklogs: number;
   deadline: string;
+  location?: string;
+  salary?: string;
+  type?: string;
+  tags?: string[];
+  eligibilityStatus?: boolean;
+  matchScore?: number | null;
+  feedback?: string[];
 }
 
 export interface Application {
@@ -106,6 +149,14 @@ export interface Application {
   studentId: number;
   matchScore: number | null;
   status: string;
+}
+
+export interface Notification {
+  id: number;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 // ─── Auth endpoints ───────────────────────────────────────────────────────────
@@ -135,6 +186,79 @@ export const studentApi = {
 
   getProfile: (userId: number) =>
     request<StudentProfile>(`/students/${userId}`),
+
+  updateProfile: (payload: { videoResumeUrl?: string, resumeUrl?: string }) =>
+    request<{ message: string, student: any }>("/students", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  addExperience: (payload: any) =>
+    request<{ message: string, experience: any }>("/students/experience", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  removeExperience: (id: number) =>
+    request<{ message: string }>(`/students/experience/${id}`, {
+      method: "DELETE",
+    }),
+
+  addCertification: (payload: any) =>
+    request<{ message: string, cert: any }>("/students/certification", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  removeCertification: (id: number) =>
+    request<{ message: string }>(`/students/certification/${id}`, {
+      method: "DELETE",
+    }),
+
+  updateSoftSkills: (skills: string[]) =>
+    request<{ message: string }>("/students/softskills", {
+      method: "POST",
+      body: JSON.stringify({ skills }),
+    }),
+
+  getNotifications: () =>
+    request<Notification[]>("/students/notifications"),
+
+  markNotificationRead: (id: number) =>
+    request<{ message: string }>(`/students/notifications/${id}/read`, {
+      method: "PUT",
+    }),
+
+  getExtraDataRequests: () =>
+    request<any[]>("/university/data-requests"),
+
+  submitExtraData: (payload: { requestId: number, value: string, fileUrl?: string }) =>
+    request<{ message: string }>("/university/students/extra-data", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  requestPlatformVerification: (payload: { platform: string; handle: string }) =>
+    request<{ message: string; token: string; profileId: number }>("/students/platform/request", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  verifyPlatform: (payload: { profileId: number }) =>
+    request<{ message: string; profile: any }>("/students/platform/verify", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
+  generateSkills: () =>
+    request<{ message: string; skills: any }>("/students/skills/generate", {
+      method: "POST"
+    }),
+
+  removePlatform: (platform: string) =>
+    request<{ message: string }>(`/students/platform/${platform}`, {
+      method: "DELETE"
+    }),
 };
 
 // ─── Job endpoints ────────────────────────────────────────────────────────────

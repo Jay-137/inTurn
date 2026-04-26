@@ -58,65 +58,8 @@ const availableRoles = [
   { label: "SDE Intern", category: "Internship" },
 ];
 
-const skillScores = [
-  { name: "DSA & Problem Solving", score: 85, color: "indigo" as const },
-  { name: "Frontend Development", score: 92, color: "purple" as const },
-  { name: "Backend Development", score: 68, color: "blue" as const },
-  { name: "System Design", score: 45, color: "amber" as const },
-];
-
-const placementInsights = [
-  {
-    icon: Star,
-    text: "Your strongest area: Frontend Development (92/100)",
-    color: "text-purple-600",
-    bg: "bg-purple-50",
-  },
-  {
-    icon: TrendingUp,
-    text: "Improve Backend Development to increase shortlist chances",
-    color: "text-blue-600",
-    bg: "bg-blue-50",
-  },
-  {
-    icon: Award,
-    text: "You align with 80% of SDE roles in the placement pool",
-    color: "text-indigo-600",
-    bg: "bg-indigo-50",
-  },
-];
-
-// Static locations/tags since backend does not store these per job
-const JOB_META: Record<
-  number,
-  { location: string; tags: string[]; role: string; salary: string }
-> = {};
-
-function getJobMeta(job: Job) {
-  if (!JOB_META[job.id]) {
-    const locations = ["Remote", "Bangalore", "Mumbai", "Hyderabad", "Delhi", "Hybrid"];
-    const tagSets = [
-      ["React", "TypeScript"],
-      ["Python", "DSA"],
-      ["Node.js", "React"],
-      ["Go", "PostgreSQL"],
-      ["Java", "Spring Boot"],
-    ];
-    JOB_META[job.id] = {
-      location: locations[job.id % locations.length],
-      tags: tagSets[job.id % tagSets.length],
-      role: job.title.toLowerCase().includes("intern")
-        ? "SDE Intern"
-        : job.title.toLowerCase().includes("frontend")
-        ? "Frontend Developer"
-        : job.title.toLowerCase().includes("backend")
-        ? "Backend Developer"
-        : "Full Stack Developer",
-      salary: job.id % 2 === 0 ? `${8 + job.id}–${14 + job.id} LPA` : `${35 + job.id}K/month`,
-    };
-  }
-  return JOB_META[job.id];
-}
+// Static mock data removed. We will derive skills and insights from the backend profile.
+// The `Job` model from backend now contains location, salary, type, and tags natively.
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -175,31 +118,24 @@ export function CandidateDashboard() {
     }
   };
 
-  // Compute match score client-side (backend calculates on apply, here we estimate)
-  function estimateMatch(job: Job): number {
-    if (!studentProfile) return 50;
-    let score = 70;
-    if (studentProfile.cgpa >= job.minCgpa) score += 15;
-    if (studentProfile.backlogCount <= job.maxBacklogs) score += 10;
-    if (studentProfile.cgpa >= 8.5) score += 5;
-    return Math.min(score, 99);
-  }
-
   const jobsWithMeta = jobs.map((j) => ({
     ...j,
-    ...getJobMeta(j),
-    match: estimateMatch(j),
-    eligible:
-      studentProfile
-        ? studentProfile.cgpa >= j.minCgpa &&
-          studentProfile.backlogCount <= j.maxBacklogs
-        : false,
+    role: j.title,
+    location: j.location || "Remote",
+    tags: j.tags || ["General"],
+    salary: j.salary || "Unspecified",
+    type: j.type || "Full-time",
+    match: j.matchScore !== null && j.matchScore !== undefined ? j.matchScore : 0,
+    hasRealScore: j.matchScore !== null && j.matchScore !== undefined,
+    eligible: j.eligibilityStatus ?? false,
     applied: appliedJobs.includes(String(j.id)),
   }));
 
   const filteredJobs =
     preferredRoles.length > 0
-      ? jobsWithMeta.filter((j) => preferredRoles.includes(j.role))
+      ? jobsWithMeta.filter((j) => 
+          preferredRoles.some(role => role.toLowerCase() === j.role.toLowerCase())
+        )
       : jobsWithMeta;
 
   const topJobs = [...filteredJobs].sort((a, b) => b.match - a.match).slice(0, 3);
@@ -218,7 +154,9 @@ export function CandidateDashboard() {
           status: studentProfile.registrationStatus === "APPROVED",
           detail: studentProfile.registrationStatus === "APPROVED"
             ? "Approved"
-            : studentProfile.registrationStatus,
+            : studentProfile.registrationStatus === "PENDING"
+              ? "Pending University Approval"
+              : studentProfile.registrationStatus,
         },
         {
           label: "Placement Status",
@@ -242,6 +180,32 @@ export function CandidateDashboard() {
       ];
 
   const eligibleCount = eligibilityItems.filter((e) => e.status).length;
+
+  const dynamicSkillScores = studentProfile?.skills?.map(s => {
+    return { name: s.skill?.name || "Skill", score: Math.round(s.score * 100), color: "indigo" as const };
+  }) || [];
+
+  const dynamicInsights = studentProfile && dynamicSkillScores.length > 0 ? [
+    {
+      icon: Star,
+      text: `Your strongest area: ${dynamicSkillScores.reduce((a,b) => a.score > b.score ? a : b).name} (${dynamicSkillScores.reduce((a,b) => a.score > b.score ? a : b).score}/100)`,
+      color: "text-purple-600",
+      bg: "bg-purple-50",
+    },
+    {
+      icon: Award,
+      text: `You align with ${shortlistedCount} roles in the placement pool`,
+      color: "text-indigo-600",
+      bg: "bg-indigo-50",
+    }
+  ] : [
+    {
+      icon: TrendingUp,
+      text: "Link your profiles to generate insights",
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+    }
+  ];
 
   if (loadingProfile) {
     return (
@@ -270,7 +234,7 @@ export function CandidateDashboard() {
             <GradientButton
               size="sm"
               className="mt-3"
-              onClick={() => navigate("/student/setup")}
+              onClick={() => navigate("/student/data")}
             >
               Set Up Profile <ArrowRight className="w-4 h-4 inline ml-1" />
             </GradientButton>
@@ -319,8 +283,8 @@ export function CandidateDashboard() {
         <StatCard
           icon={<Target className="w-5 h-5" />}
           label="Profile Alignment Score"
-          value="87%"
-          trend="+5% this week"
+          value={studentProfile ? `${profileCompletion}%` : "0%"}
+          trend={studentProfile ? "Based on linked profiles" : "Setup profile to calculate"}
         />
         <StatCard
           icon={<Briefcase className="w-5 h-5" />}
@@ -578,7 +542,7 @@ export function CandidateDashboard() {
                 variant="outline"
                 size="sm"
                 className="mt-4"
-                onClick={() => navigate("/student/link")}
+                onClick={() => navigate(studentProfile ? "/student/link" : "/student/data")}
               >
                 Complete Profile
               </GradientButton>
@@ -602,7 +566,7 @@ export function CandidateDashboard() {
               Used for placement shortlisting
             </p>
             <div className="space-y-4">
-              {skillScores.map((s, i) => (
+              {dynamicSkillScores.length > 0 ? dynamicSkillScores.map((s, i) => (
                 <div key={i}>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm text-gray-700">{s.name}</span>
@@ -610,7 +574,9 @@ export function CandidateDashboard() {
                   </div>
                   <ProgressBar value={s.score} color={s.color} />
                 </div>
-              ))}
+              )) : (
+                <p className="text-sm text-gray-500 text-center py-4">No skills registered. Link external profiles or take assessments to build your skill graph.</p>
+              )}
             </div>
           </Card>
 
@@ -628,7 +594,7 @@ export function CandidateDashboard() {
               </div>
             </div>
             <div className="space-y-2.5">
-              {placementInsights.map((insight, i) => (
+              {dynamicInsights.map((insight, i) => (
                 <div
                   key={i}
                   className={`flex items-start gap-3 rounded-xl p-3 ${insight.bg}`}
@@ -686,7 +652,13 @@ export function CandidateDashboard() {
                             {new Date(job.deadline).toLocaleDateString()}
                           </p>
                         </div>
-                        <MatchScoreCircle score={job.match} size={44} />
+                        {job.hasRealScore && studentProfile ? (
+                          <MatchScoreCircle score={job.match} size={44} />
+                        ) : (
+                          <div className="text-[10px] text-amber-500 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" /> No Profile
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         {job.tags.map((t) => (
@@ -697,17 +669,17 @@ export function CandidateDashboard() {
                             {t}
                           </span>
                         ))}
-                        {job.match >= 88 ? (
+                        {job.hasRealScore && studentProfile && job.match >= 88 ? (
                           <Badge variant="priority">
                             <Star className="w-3 h-3 mr-1" /> Top Shortlist
                           </Badge>
-                        ) : (
+                        ) : job.hasRealScore && studentProfile && job.match >= 75 ? (
                           <Badge variant="info">
                             <TrendingUp className="w-3 h-3 mr-1" /> High Alignment
                           </Badge>
-                        )}
-                        <Badge variant={job.eligible ? "success" : "warning"}>
-                          {job.eligible ? "Eligible" : "Partially Eligible"}
+                        ) : null}
+                        <Badge variant={job.eligible && studentProfile ? "success" : "warning"}>
+                          {studentProfile ? (job.eligible ? "Eligible" : "Partially Eligible") : "Check Eligibility"}
                         </Badge>
                       </div>
                     </motion.div>

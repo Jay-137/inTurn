@@ -8,6 +8,7 @@ const jobRoutes = require('./routes/jobRoutes');
 const placementRoutes = require('./routes/placementRoutes');
 const universityRoutes = require('./routes/universityRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const companyRoutes = require('./routes/companyRoutes');
 
 
 const app = express();
@@ -22,6 +23,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/placements', placementRoutes);
 app.use('/api/university', universityRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/companies', companyRoutes);
 
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'OK', message: 'Placement System API is running.' });

@@ -7,7 +7,9 @@ import {
   Heart, Video, Upload, Sparkles, GraduationCap, BookOpen,
   Palette, GitBranch, Brain, Loader2
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
+import { studentApi } from "../../lib/api";
+import { toast } from "sonner";
 
 // ─── Tab config ──────────────────────────────────────────────────────────────
 type TabKey = "platforms" | "experience" | "certifications" | "softskills";
@@ -237,32 +239,110 @@ export function LinkSkillProof() {
 // That endpoint doesn't exist yet in the backend (only userId + platform + url
 // model exists via ExternalProfile). We save the platform state in context.
 function PlatformsTab() {
-  const { linkedPlatforms, setLinkedPlatforms } = useApp();
-  const [connecting, setConnecting] = useState<string | null>(null);
-  const [showSuccess, setShowSuccess] = useState<string | null>(null);
+  const { authUser, studentProfile, setStudentProfile, linkedPlatforms, setLinkedPlatforms } = useApp();
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
+  const [currentProfileId, setCurrentProfileId] = useState<number | null>(null);
+  const [connecting, setConnecting] = useState<PlatformKey | null>(null);
+  const [activePlatform, setActivePlatform] = useState<PlatformKey | null>(null);
+  const [showSuccess, setShowSuccess] = useState<PlatformKey | null>(null);
   const [usernameInputs, setUsernameInputs] = useState<Record<string, string>>({});
-  const [showInput, setShowInput] = useState<string | null>(null);
+  const [showInput, setShowInput] = useState<PlatformKey | null>(null);
 
-  const handleConnect = (key: PlatformKey) => {
-    const platform = platforms.find((p) => p.key === key)!;
-    const username = usernameInputs[key] || "";
-    if (!username.trim()) return;
-
-    setConnecting(key);
-    setShowInput(null);
-
-    // Simulate connection delay
-    setTimeout(() => {
-      setLinkedPlatforms({ ...linkedPlatforms, [key]: true });
-      setConnecting(null);
-      setShowSuccess(key);
-      setTimeout(() => setShowSuccess(null), 3000);
-    }, 1500);
+  const getDynamicMetrics = (platformKey: string, isConnected: boolean, staticMetrics: string[]) => {
+    if (!isConnected || !studentProfile?.externalProfiles) return staticMetrics;
+    const profile = studentProfile.externalProfiles.find(p => p.platform.toLowerCase() === platformKey);
+    if (!profile || !profile.stats) return staticMetrics;
+    const stats = profile.stats as any;
+    
+    switch (platformKey) {
+      case 'github':
+        return [
+          `${stats.originalReposCount || stats.publicReposCount || 0} repositories`,
+          `${stats.totalStars || 0} stars`,
+          `${stats.followers || 0} followers`
+        ];
+      case 'leetcode':
+        return [
+          `${stats.totalSolved || 0} problems solved`,
+          `Rating: ${stats.contestRating || 0}`,
+          stats.globalRanking ? `Global Rank: ${stats.globalRanking}` : 'Unranked'
+        ];
+      case 'codeforces':
+        return [
+          `${stats.totalSolved || 0} problems solved`,
+          `Rating: ${stats.contestRating || 0}`,
+          `Rank: ${stats.rank || 'N/A'}`
+        ];
+      default:
+        return staticMetrics;
+    }
   };
 
-  const handleDisconnect = (key: PlatformKey) => {
-    setLinkedPlatforms({ ...linkedPlatforms, [key]: false });
-    setUsernameInputs((prev) => ({ ...prev, [key]: "" }));
+  const handleRequestVerification = async (key: PlatformKey) => {
+    const handle = usernameInputs[key] || "";
+    if (!handle.trim()) return;
+
+    setConnecting(key);
+    setActivePlatform(key);
+    try {
+      const res = await studentApi.requestPlatformVerification({ platform: key, handle });
+      setVerificationToken(res.token);
+      setCurrentProfileId(res.profileId);
+      setConnecting(null); 
+    } catch (e: any) {
+      toast.error(e.message || "Failed to initiate verification");
+      setConnecting(null);
+      setActivePlatform(null);
+    }
+  };
+
+  const handleVerify = async () => {
+    if (!currentProfileId || !activePlatform) return;
+    
+    setConnecting(activePlatform);
+    try {
+      await studentApi.verifyPlatform({ profileId: currentProfileId });
+      
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+        
+        setShowSuccess(activePlatform);
+        setVerificationToken(null);
+        setCurrentProfileId(null);
+        setConnecting(null);
+        setActivePlatform(null);
+        setShowInput(null);
+
+        try {
+          await studentApi.generateSkills();
+          const updatedP = await studentApi.getProfile(authUser.id);
+          setStudentProfile(updatedP);
+        } catch (skillErr) {
+          console.error("Skill generation failed:", skillErr);
+        }
+      }
+      
+      setTimeout(() => setShowSuccess(null), 3000);
+    } catch (e: any) {
+      toast.error(e.message || "Verification failed. Make sure you added the token to your profile bio.");
+      setConnecting(null);
+    }
+  };
+
+  const handleDisconnect = async (key: PlatformKey) => {
+    try {
+      await studentApi.removePlatform(key);
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+        await studentApi.generateSkills();
+        const updatedP = await studentApi.getProfile(authUser.id);
+        setStudentProfile(updatedP);
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Failed to disconnect platform");
+    }
   };
 
   const linkedCount = Object.values(linkedPlatforms).filter(Boolean).length;
@@ -344,10 +424,10 @@ function PlatformsTab() {
                       <>
                         <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
                           <ExternalLink className="w-3 h-3" />
-                          <span>{usernameInputs[platform.key] || "connected"}</span>
+                          <span>{platform.urlPattern + (studentProfile?.externalProfiles?.find(p => p.platform.toLowerCase() === platform.key)?.url || "")}</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5 mb-3">
-                          {platform.metrics.map((m) => (
+                          {getDynamicMetrics(platform.key, isConnected, platform.metrics).map((m) => (
                             <span key={m} className={`text-xs px-2 py-0.5 rounded-full ${platform.lightBg} text-gray-700`}>{m}</span>
                           ))}
                         </div>
@@ -360,6 +440,20 @@ function PlatformsTab() {
                           </button>
                         </div>
                       </>
+                    ) : activePlatform === platform.key && verificationToken ? (
+                      <div className="mt-auto space-y-3">
+                        <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                          <p className="text-[10px] text-indigo-600 font-medium mb-1 uppercase tracking-wider">Verification Required</p>
+                          <p className="text-xs text-gray-700 mb-2">Add this token to your {platform.name} bio or location:</p>
+                          <div className="bg-white border border-indigo-200 rounded px-2 py-1 font-mono text-xs text-indigo-700 select-all">{verificationToken}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <GradientButton size="sm" onClick={handleVerify} className="flex-1">
+                            {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Verify Now"}
+                          </GradientButton>
+                          <GradientButton variant="outline" size="sm" onClick={() => { setVerificationToken(null); setConnecting(null); setActivePlatform(null); }}>Cancel</GradientButton>
+                        </div>
+                      </div>
                     ) : isShowingInput ? (
                       <div className="mt-auto space-y-2">
                         <input
@@ -368,12 +462,12 @@ function PlatformsTab() {
                           placeholder={`Enter your ${platform.name} username`}
                           value={usernameInputs[platform.key] || ""}
                           onChange={(e) => setUsernameInputs((prev) => ({ ...prev, [platform.key]: e.target.value }))}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleConnect(platform.key); if (e.key === "Escape") setShowInput(null); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleRequestVerification(platform.key); if (e.key === "Escape") setShowInput(null); }}
                           className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-indigo-300"
                         />
                         <div className="flex gap-2">
-                          <GradientButton size="sm" onClick={() => handleConnect(platform.key)}>
-                            {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Connect"}
+                          <GradientButton size="sm" onClick={() => handleRequestVerification(platform.key)}>
+                            {isConnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Next Step"}
                           </GradientButton>
                           <GradientButton variant="outline" size="sm" onClick={() => setShowInput(null)}>Cancel</GradientButton>
                         </div>
@@ -381,16 +475,7 @@ function PlatformsTab() {
                     ) : (
                       <div className="mt-auto">
                         <GradientButton size="sm" onClick={() => setShowInput(platform.key)} className={isConnecting ? "opacity-70 pointer-events-none" : ""}>
-                          {isConnecting ? (
-                            <span className="flex items-center gap-2">
-                              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                                <RefreshCw className="w-3.5 h-3.5" />
-                              </motion.div>
-                              Connecting...
-                            </span>
-                          ) : (
-                            <>Connect {platform.name}</>
-                          )}
+                          Connect {platform.name}
                         </GradientButton>
                       </div>
                     )}
@@ -414,9 +499,11 @@ function PlatformsTab() {
 // ─── Experience Tab ───────────────────────────────────────────────────────────
 // Stored locally in component state — backend has no experience endpoint
 function ExperienceTab() {
-  const [experiences, setExperiences] = useState<ExperienceEntry[]>(defaultExperiences);
+  const { studentProfile, setStudentProfile, authUser } = useApp();
+  const experiences = studentProfile?.experiences || [];
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", company: "", type: "internship" as ExperienceEntry["type"], duration: "", description: "", skills: "" });
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ title: "", company: "", type: "internship", duration: "", description: "", skills: "" });
 
   const typeColors: Record<string, string> = {
     internship: "bg-blue-50 text-blue-700 border-blue-200",
@@ -425,11 +512,44 @@ function ExperienceTab() {
     freelance: "bg-amber-50 text-amber-700 border-amber-200",
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.title.trim() || !form.company.trim()) return;
-    setExperiences([...experiences, { id: Date.now().toString(), title: form.title, company: form.company, type: form.type, duration: form.duration, description: form.description, skills: form.skills.split(",").map((s) => s.trim()).filter(Boolean) }]);
-    setForm({ title: "", company: "", type: "internship", duration: "", description: "", skills: "" });
-    setShowForm(false);
+    setLoading(true);
+    try {
+      const payload = {
+        title: form.title,
+        company: form.company,
+        type: form.type as any,
+        duration: form.duration,
+        description: form.description,
+        skills: form.skills.split(",").map((s) => s.trim()).filter(Boolean)
+      };
+      await studentApi.addExperience(payload);
+      await studentApi.generateSkills(); // Regenerate skills
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+      }
+      setForm({ title: "", company: "", type: "internship", duration: "", description: "", skills: "" });
+      setShowForm(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemove = async (id: number) => {
+    try {
+      await studentApi.removeExperience(id);
+      await studentApi.generateSkills(); // Regenerate skills
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (
@@ -466,7 +586,7 @@ function ExperienceTab() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">Type</label>
-                    <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as ExperienceEntry["type"] })} className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-300 cursor-pointer">
+                    <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-300 cursor-pointer">
                       <option value="internship">Internship</option>
                       <option value="fulltime">Full-time</option>
                       <option value="project">Project</option>
@@ -487,7 +607,9 @@ function ExperienceTab() {
                   <input type="text" value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} placeholder="e.g., React, Python, AWS" className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-indigo-300" />
                 </div>
                 <div className="flex justify-end">
-                  <GradientButton size="sm" onClick={handleAdd}><CheckCircle2 className="w-4 h-4 inline mr-1" /> Save Experience</GradientButton>
+                  <GradientButton size="sm" onClick={handleAdd} className={loading ? "opacity-50 pointer-events-none" : ""}>
+                    {loading ? <Loader2 className="w-4 h-4 inline mr-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 inline mr-1" />} Save Experience
+                  </GradientButton>
                 </div>
               </div>
             </motion.div>
@@ -506,7 +628,7 @@ function ExperienceTab() {
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">{exp.company} · {exp.duration}</p>
                 </div>
-                <button onClick={() => setExperiences(experiences.filter((e) => e.id !== exp.id))} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><X className="w-4 h-4" /></button>
+                <button onClick={() => handleRemove(exp.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><X className="w-4 h-4" /></button>
               </div>
               <p className="text-xs text-gray-600 mb-2">{exp.description}</p>
               <div className="flex flex-wrap gap-1.5">
@@ -524,15 +646,42 @@ function ExperienceTab() {
 
 // ─── Certifications Tab ───────────────────────────────────────────────────────
 function CertificationsTab() {
-  const [certs, setCerts] = useState<CertificationEntry[]>(defaultCerts);
+  const { studentProfile, setStudentProfile, authUser } = useApp();
+  const certs = studentProfile?.certifications || [];
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ name: "", platform: "Udemy", issueDate: "", credentialUrl: "" });
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.name.trim()) return;
-    setCerts([...certs, { id: Date.now().toString(), name: form.name, platform: form.platform, issueDate: form.issueDate, credentialUrl: form.credentialUrl, verified: false }]);
-    setForm({ name: "", platform: "Udemy", issueDate: "", credentialUrl: "" });
-    setShowForm(false);
+    setLoading(true);
+    try {
+      await studentApi.addCertification(form);
+      await studentApi.generateSkills(); // Regenerate skills
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+      }
+      setForm({ name: "", platform: "Udemy", issueDate: "", credentialUrl: "" });
+      setShowForm(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemove = async (id: number) => {
+    try {
+      await studentApi.removeCertification(id);
+      await studentApi.generateSkills(); // Regenerate skills
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (
@@ -542,8 +691,19 @@ function CertificationsTab() {
         <p className="text-sm text-muted-foreground mb-4">Link your learning platforms to auto-import certifications</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {certPlatforms.map((cp) => (
-            <motion.button key={cp.name} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all cursor-pointer">
-              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${cp.color} flex items-center justify-center shrink-0`}><cp.icon className="w-4 h-4 text-white" /></div>
+            <motion.button
+              key={cp.name}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                setForm({ ...form, platform: cp.name });
+                setShowForm(true);
+              }}
+              className="flex items-center gap-2.5 p-3 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all cursor-pointer"
+            >
+              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${cp.color} flex items-center justify-center shrink-0`}>
+                <cp.icon className="w-4 h-4 text-white" />
+              </div>
               <span className="text-xs text-gray-700 text-left">{cp.name}</span>
             </motion.button>
           ))}
@@ -590,7 +750,9 @@ function CertificationsTab() {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <GradientButton size="sm" onClick={handleAdd}><CheckCircle2 className="w-4 h-4 inline mr-1" /> Save Certificate</GradientButton>
+                  <GradientButton size="sm" onClick={handleAdd} className={loading ? "opacity-50 pointer-events-none" : ""}>
+                    {loading ? <Loader2 className="w-4 h-4 inline mr-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 inline mr-1" />} Save Certificate
+                  </GradientButton>
                 </div>
               </div>
             </motion.div>
@@ -610,13 +772,15 @@ function CertificationsTab() {
                     {cert.verified ? (
                       <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Verified</Badge>
                     ) : (
-                      <button onClick={() => setCerts(certs.map((c) => c.id === cert.id ? { ...c, verified: true } : c))} className="text-xs text-indigo-600 hover:underline cursor-pointer">Verify</button>
+                      <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 flex items-center gap-1 w-fit">
+                        <Clock className="w-2.5 h-2.5" /> Pending Review
+                      </span>
                     )}
                   </div>
                   <p className="text-xs text-gray-500">{cert.platform} · {cert.issueDate}</p>
                 </div>
                 {cert.credentialUrl && <a href={cert.credentialUrl} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-indigo-600"><ExternalLink className="w-4 h-4" /></a>}
-                <button onClick={() => setCerts(certs.filter((c) => c.id !== cert.id))} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><X className="w-4 h-4" /></button>
+                <button onClick={() => handleRemove(cert.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><X className="w-4 h-4" /></button>
               </motion.div>
             );
           })}
@@ -628,21 +792,55 @@ function CertificationsTab() {
 
 // ─── Soft Skills Tab ──────────────────────────────────────────────────────────
 function SoftSkillsTab() {
-  const [selectedSkills, setSelectedSkills] = useState<string[]>(["Public Speaking", "Teamwork", "Critical Thinking"]);
-  const [visumeUploaded, setVisumeUploaded] = useState(false);
+  const { studentProfile, setStudentProfile, authUser } = useApp();
+  const initialSkills = studentProfile?.softSkills?.map(s => s.name) || [];
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(initialSkills);
+  const [isSaving, setIsSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiSkills, setAiSkills] = useState<string[]>([]);
+  const visumeUploaded = !!studentProfile?.videoResumeUrl;
 
   const toggleSkill = (skill: string) =>
     setSelectedSkills((prev) => prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill]);
 
-  const handleVisumeUpload = () => {
+  const saveSoftSkills = async () => {
+    setIsSaving(true);
+    try {
+      await studentApi.updateSoftSkills(selectedSkills);
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleVisumeUpload = async () => {
+    // In a real production app, you would use Cloudinary/S3 here.
+    // For this integration, we simulate the upload and save a real URL to the backend.
     setAnalyzing(true);
-    setTimeout(() => {
-      setVisumeUploaded(true);
-      setAnalyzing(false);
+    try {
+      // Simulate network delay for upload
+      await new Promise(r => setTimeout(r, 2000));
+      
+      const simulatedUrl = "https://res.cloudinary.com/demo/video/upload/dog.mp4";
+      await studentApi.updateProfile({ videoResumeUrl: simulatedUrl });
+      
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+      }
+      
       setAiSkills(["Confident Communication", "Clear Articulation", "Positive Body Language", "Structured Thinking"]);
-    }, 3000);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to upload visume");
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   return (
@@ -692,7 +890,11 @@ function SoftSkillsTab() {
                 </div>
               </div>
             )}
-            <button onClick={() => { setVisumeUploaded(false); setAiSkills([]); }} className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer">Re-upload visume</button>
+            <button onClick={async () => {
+              await studentApi.updateProfile({ videoResumeUrl: "" });
+              if (authUser) setStudentProfile(await studentApi.getProfile(authUser.id));
+              setAiSkills([]);
+            }} className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer">Remove visume</button>
           </div>
         )}
       </Card>
@@ -718,11 +920,16 @@ function SoftSkillsTab() {
           ))}
         </div>
         {selectedSkills.length > 0 && (
-          <div className="mt-5 p-3 bg-indigo-50 rounded-xl border border-indigo-200">
-            <p className="text-xs text-indigo-700 mb-2">{selectedSkills.length} soft skill{selectedSkills.length !== 1 ? "s" : ""} selected</p>
-            <div className="flex flex-wrap gap-1.5">
-              {selectedSkills.map((s) => (<span key={s} className="text-xs bg-white text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">{s}</span>))}
+          <div className="mt-5 p-4 bg-indigo-50 rounded-xl border border-indigo-200 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-indigo-700 mb-2">{selectedSkills.length} soft skill{selectedSkills.length !== 1 ? "s" : ""} selected</p>
+              <div className="flex flex-wrap gap-1.5">
+                {selectedSkills.map((s) => (<span key={s} className="text-xs bg-white text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">{s}</span>))}
+              </div>
             </div>
+            <GradientButton size="sm" onClick={saveSoftSkills} className={isSaving ? "opacity-50 pointer-events-none" : ""}>
+               {isSaving ? <Loader2 className="w-4 h-4 inline mr-1 animate-spin" /> : "Save Skills"}
+            </GradientButton>
           </div>
         )}
       </Card>

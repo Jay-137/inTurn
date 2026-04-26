@@ -1,33 +1,40 @@
 const prisma = require('../utils/prisma');
-const { calculateMatchScore } = require('../utils/matchScorer');
-// [RECRUITER ONLY] Post a new job
-const createJob = async (req, res) => {
-    try {
-        const { title, minCgpa, maxBacklogs, deadline } = req.body;
+const { evaluateEligibility } = require('../services/engine/eligibilityEngine');
 
-        const job = await prisma.job.create({
-            data: {
-                title,
-                minCgpa,
-                maxBacklogs,
-                // Ensure deadline is parsed as an ISO-8601 Date object
-                deadline: new Date(deadline) 
-            }
-        });
-
-        res.status(201).json({ message: 'Job posted successfully', job });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Failed to create job.' });
-    }
-};
-
-// [ALL ROLES] View open jobs
+// [ALL ROLES] View open jobs. If requested by a student, append eligibility info.
 const getJobs = async (req, res) => {
     try {
         const jobs = await prisma.job.findMany({
+            include: { company: true },
             orderBy: { deadline: 'asc' }
         });
+
+        // If a student is requesting, attach eligibility flags
+        if (req.user && req.user.role === 'STUDENT') {
+            const student = await prisma.student.findUnique({
+                where: { userId: req.user.id }
+            });
+
+            if (student) {
+                // Fetch university filter if it exists
+                const uniFilter = await prisma.universityFilter.findFirst({
+                    where: { universityId: student.universityId }
+                });
+
+                const enhancedJobs = [];
+                for (const job of jobs) {
+                    const eligibility = await evaluateEligibility(student, job, uniFilter);
+                    enhancedJobs.push({
+                        ...job,
+                        eligibilityStatus: eligibility.isEligible,
+                        matchScore: eligibility.matchScore,
+                        feedback: eligibility.feedback
+                    });
+                }
+                return res.status(200).json(enhancedJobs);
+            }
+        }
+
         res.status(200).json(jobs);
     } catch (error) {
         console.error(error);
@@ -35,77 +42,64 @@ const getJobs = async (req, res) => {
     }
 };
 
-// [STUDENT ONLY] Apply for a job (With Hard Filter)
+// [STUDENT ONLY] Apply for a job
 const applyForJob = async (req, res) => {
     try {
         const jobId = parseInt(req.params.jobId, 10);
-        const userId = req.user.id; // From JWT
+        const userId = req.user.id; 
 
-        // 1. Fetch the actual student profile using the JWT userId
         const student = await prisma.student.findUnique({ where: { userId } });
         if (!student) {
-            return res.status(404).json({ error: 'Student profile not found. Please complete your profile first.' });
+            return res.status(404).json({ error: 'Student profile not found.' });
         }
 
-        // 2. Fetch the job requirements
         const job = await prisma.job.findUnique({ where: { id: jobId } });
         if (!job) return res.status(404).json({ error: 'Job not found.' });
 
-        // === THE HARD FILTER ===
-
-        // A. Deadline Check
         if (new Date() > job.deadline) {
-            return res.status(400).json({ error: 'Application rejected: The deadline for this job has passed.' });
+            return res.status(400).json({ error: 'Deadline passed.' });
         }
 
-        // B. CGPA Check
-        if (student.cgpa < job.minCgpa) {
-            return res.status(400).json({ 
-                error: `Eligibility failed: Your CGPA (${student.cgpa}) is below the required minimum (${job.minCgpa}).` 
-            });
-        }
-
-        // C. Backlog Check
-        if (student.backlogCount > job.maxBacklogs) {
-            return res.status(400).json({ 
-                error: `Eligibility failed: Your active backlogs (${student.backlogCount}) exceed the maximum allowed (${job.maxBacklogs}).` 
-            });
-        }
-
-        // D. Placement Policy Check (Students already placed cannot apply)
         if (student.placementStatus === 'PLACED') {
-            return res.status(400).json({ error: 'Policy violation: You are already placed and cannot apply for further jobs.' });
+            return res.status(400).json({ error: 'You are already placed.' });
         }
 
-        // E. Duplicate Application Check
         const existingApp = await prisma.application.findFirst({
             where: { jobId, studentId: student.id }
         });
         if (existingApp) {
-            return res.status(400).json({ error: 'You have already applied for this job.' });
+            return res.status(400).json({ error: 'You have already applied.' });
         }
 
-        // === END HARD FILTER ===
+        // Run full eligibility evaluation (branch, year, backlogs, cgpa, university filters)
+        const uniFilter = await prisma.universityFilter.findFirst({
+            where: { universityId: student.universityId }
+        });
 
-        // 3. Save the valid application
-      // NEW: Calculate the dynamic Match Score just before saving
-        const calculatedScore = await calculateMatchScore(student.id, jobId);
+        const eligibility = await evaluateEligibility(student, job, uniFilter);
 
-        // 3. Save the valid application
+        if (!eligibility.isEligible) {
+            return res.status(400).json({ 
+                error: 'Not eligible for this job.', 
+                reasons: eligibility.feedback 
+            });
+        }
+
+        // Save application
         const application = await prisma.application.create({
             data: {
                 jobId,
                 studentId: student.id,
-                matchScore: calculatedScore, // <-- Inject the score here
+                matchScore: eligibility.matchScore, 
                 status: 'APPLIED'
             }
         });
 
-        res.status(201).json({ message: 'Application submitted successfully', application });
+        res.status(201).json({ message: 'Application submitted', application });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: 'Failed to submit application.' });
+        res.status(500).json({ error: 'Failed to apply.' });
     }
 };
 
-module.exports = { createJob, getJobs, applyForJob };
+module.exports = { getJobs, applyForJob };

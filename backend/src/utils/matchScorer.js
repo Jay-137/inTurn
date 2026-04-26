@@ -41,9 +41,9 @@ const calculateMatchScore = async (studentId, jobId) => {
 
     if (totalWeights === 0) return 0;
 
-    // Return normalized score (0 to 1) rounded to 2 decimal places
-    const finalScore = totalWeightedScore / totalWeights;
-    return Math.round(finalScore * 100) / 100; 
+    // Return normalized score (0 to 100) rounded to integer
+    const finalScore = (totalWeightedScore / totalWeights) * 100;
+    return Math.round(finalScore);
 };
 
 module.exports = { calculateMatchScore };

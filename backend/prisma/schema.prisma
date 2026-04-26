@@ -7,92 +7,120 @@ datasource db {
 }
 
 model User {
-  id       Int      @id @default(autoincrement())
-  name     String
-  email    String   @unique
-  password String
-  role     String   // e.g., "STUDENT", "UNIVERSITY", "RECRUITER"
-  student  Student? // 1-to-1 relation (optional because not all users are students)
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String // e.g., "STUDENT", "UNIVERSITY", "RECRUITER"
+  createdAt DateTime @default(now())
+  companyId Int? // Nullable because not all users are recruiters
+  student   Student? // 1-to-1 relation (optional because not all users are students)
+  company   Company? @relation(fields: [companyId], references: [id])
+  notifications Notification[]
 }
 
 model University {
-  id            Int            @id @default(autoincrement())
+  id            Int                @id @default(autoincrement())
   name          String
   students      Student[]
   academicUnits AcademicUnit[]
+  filters       UniversityFilter[]
+  dataRequests  UniversityDataRequest[]
 }
 
 model AcademicUnit {
-  id           Int            @id @default(autoincrement())
+  id           Int    @id @default(autoincrement())
   name         String
-  type         String         // e.g., "School", "Department", "Section"
-  parentId     Int?           
+  type         String // e.g., "School", "Department", "Section"
+  parentId     Int?
   universityId Int
 
-  parent       AcademicUnit?  @relation("UnitHierarchy", fields: [parentId], references: [id])
-  children     AcademicUnit[] @relation("UnitHierarchy")
-  university   University     @relation(fields: [universityId], references: [id])
-  students     Student[]
+  parent     AcademicUnit?  @relation("UnitHierarchy", fields: [parentId], references: [id])
+  children   AcademicUnit[] @relation("UnitHierarchy")
+  university University     @relation(fields: [universityId], references: [id])
+  students   Student[]
 }
 
 model Student {
-  id                 Int      @id @default(autoincrement())
-  userId             Int      @unique
+  id                 Int     @id @default(autoincrement())
+  userId             Int     @unique
   universityId       Int
   academicUnitId     Int
-  registrationStatus String   // e.g., "PENDING", "APPROVED"
+  registrationStatus String // e.g., "PENDING", "APPROVED"
   cgpa               Float
   backlogCount       Int
-  placementStatus    String   // e.g., "UNPLACED", "PLACED"
+  placementStatus    String // e.g., "UNPLACED", "PLACED"
+  passingYear        Int?
+  branch             String?
+  videoResumeUrl     String?
+  resumeUrl          String?
 
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  university         University @relation(fields: [universityId], references: [id])
-  academicUnit       AcademicUnit @relation(fields: [academicUnitId], references: [id])
-  
-  externalProfiles   ExternalProfile[]
-  skills             StudentSkill[]
-  applications       Application[]
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  university   University   @relation(fields: [universityId], references: [id])
+  academicUnit AcademicUnit @relation(fields: [academicUnitId], references: [id])
+
+  externalProfiles    ExternalProfile[]
+  skills              StudentSkill[]
+  applications        Application[]
   placementSelections PlacementSelection[]
+  coreSubjects        StudentCoreSubject[]
+  experiences         Experience[]
+  certifications      Certification[]
+  softSkills          SoftSkill[]
+  extraData           StudentExtraData[]
 }
 
 model ExternalProfile {
-  id        Int     @id @default(autoincrement())
-  studentId Int
-  platform  String  // e.g., "GitHub", "LeetCode"
-  url       String
+  id                Int     @id @default(autoincrement())
+  studentId         Int
+  platform          String // e.g., "GitHub", "LeetCode"
+  url               String
+  isVerified        Boolean @default(false)
+  verificationToken String?
+  stats             Json?
 
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 }
 
 model Skill {
-  id            Int     @id @default(autoincrement())
-  name          String
-  type          String  // e.g., "DSA", "Development"
-  parentId      Int?
+  id       Int    @id @default(autoincrement())
+  name     String
+  type     String // e.g., "DSA", "Development"
+  parentId Int?
 
-  parent        Skill?  @relation("SkillHierarchy", fields: [parentId], references: [id])
-  children      Skill[] @relation("SkillHierarchy")
-  
+  parent   Skill?  @relation("SkillHierarchy", fields: [parentId], references: [id])
+  children Skill[] @relation("SkillHierarchy")
+
   studentSkills StudentSkill[]
   jobSkills     JobSkill[]
 }
 
 model StudentSkill {
-  id        Int     @id @default(autoincrement())
+  id        Int   @id @default(autoincrement())
   studentId Int
   skillId   Int
-  score     Float   // Normalized 0-1
+  score     Float // Normalized 0-1
 
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  skill     Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skill   Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
 }
 
 model Job {
-  id                  Int      @id @default(autoincrement())
-  title               String
-  minCgpa             Float
-  maxBacklogs         Int
-  deadline            DateTime
+  id             Int      @id @default(autoincrement())
+  title          String
+  minCgpa        Float
+  maxBacklogs    Int
+  deadline       DateTime
+  companyId      Int?
+  targetBranches Json? // e.g., ["CSE", "ECE"]
+  targetYears    Json? // e.g., [2024, 2025]
+  location       String?
+  salary         String?
+  type           String? // e.g., "Internship", "Full-time"
+  tags           Json? // e.g., ["React", "Node.js"]
+  createdAt      DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id])
 
   skills              JobSkill[]
   applications        Application[]
@@ -105,19 +133,20 @@ model JobSkill {
   skillId  Int
   priority String // e.g., "HIGH", "MEDIUM", "LOW"
 
-  job      Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  skill    Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
 }
 
 model Application {
-  id          Int    @id @default(autoincrement())
-  jobId       Int
-  studentId   Int
-  matchScore  Float? // Nullable initially, calculated upon application
-  status      String // e.g., "APPLIED", "REJECTED_ELIGIBILITY", "APPROVED"
+  id         Int    @id @default(autoincrement())
+  jobId      Int
+  studentId  Int
+  matchScore Float? // Nullable initially, calculated upon application
+  status     String // e.g., "APPLIED", "REJECTED_ELIGIBILITY", "APPROVED"
+  createdAt  DateTime @default(now())
 
-  job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  student     Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 }
 
 model PlacementSelection {
@@ -126,6 +155,100 @@ model PlacementSelection {
   studentId Int
   status    String // e.g., "SELECTED_BY_RECRUITER", "APPROVED_BY_UNIVERSITY"
 
-  job       Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model Company {
+  id       Int     @id @default(autoincrement())
+  name     String
+  industry String?
+  users    User[]
+  jobs     Job[]
+}
+
+model StudentCoreSubject {
+  id          Int     @id @default(autoincrement())
+  studentId   Int
+  subjectName String
+  grade       String? // optional
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model UniversityFilter {
+  id                Int    @id @default(autoincrement())
+  universityId      Int
+  maxGlobalBacklogs Int?
+  minGlobalCgpa     Float?
+  allowedBranches   Json?
+
+  university University @relation(fields: [universityId], references: [id], onDelete: Cascade)
+}
+
+model Experience {
+  id          Int      @id @default(autoincrement())
+  studentId   Int
+  title       String
+  company     String
+  type        String   // "internship", "fulltime", "project", "freelance"
+  duration    String
+  description String   @db.Text
+  skills      Json?    // ["React", "Node"]
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model Certification {
+  id            Int      @id @default(autoincrement())
+  studentId     Int
+  name          String
+  platform      String
+  issueDate     String
+  credentialUrl String?
+  verified      Boolean  @default(false)
+
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model SoftSkill {
+  id          Int      @id @default(autoincrement())
+  studentId   Int
+  name        String
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  message     String
+  type        String   // "info", "success", "warning"
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UniversityDataRequest {
+  id           Int      @id @default(autoincrement())
+  universityId Int
+  fieldName    String   // e.g., "10th Marksheet"
+  fieldType    String   // e.g., "text", "file", "number"
+  isRequired   Boolean  @default(true)
+
+  university   University @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  studentData  StudentExtraData[]
+}
+
+model StudentExtraData {
+  id           Int      @id @default(autoincrement())
+  studentId    Int
+  requestId    Int
+  value        String   @db.Text
+
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  request      UniversityDataRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, requestId])
 }

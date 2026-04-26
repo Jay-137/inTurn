@@ -2,9 +2,12 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import {
   Search, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   SlidersHorizontal, Filter, Users, UserCheck, TrendingUp, Briefcase,
-  ArrowUpDown, GraduationCap, BookOpen, Layers,
+  ArrowUpDown, GraduationCap, BookOpen, Layers, Loader2,
 } from "lucide-react";
 import { useTheme } from "./theme-context";
+
+const API_BASE = "http://localhost:3000/api";
+function getToken() { return localStorage.getItem("token") || ""; }
 
 /* ─── Shared Filter Type ─── */
 export type EligibleFilters = {
@@ -15,50 +18,16 @@ export type EligibleFilters = {
   contextLabel?: string;
 };
 
-/* ─── Mock Data ─── */
-const COURSES = ["B.Tech", "M.Tech", "MBA", "BCA", "MCA", "B.Sc", "M.Sc"];
-const STREAMS: Record<string, string[]> = {
-  "B.Tech": ["CSE", "IT", "ECE", "EEE", "ME", "CE"],
-  "M.Tech": ["CSE", "VLSI", "Power Systems", "Structural Engineering"],
-  "MBA": ["Finance", "Marketing", "HR", "Operations"],
-  "BCA": ["General"],
-  "MCA": ["General"],
-  "B.Sc": ["CS", "Physics", "Math"],
-  "M.Sc": ["CS", "Data Science"],
-};
-const DEPARTMENTS: Record<string, string[]> = {
-  CSE: ["CSE-A", "CSE-B", "CSE-C", "CSE-D"],
-  IT: ["IT-A", "IT-B"],
-  ECE: ["ECE-A", "ECE-B", "ECE-C"],
-  EEE: ["EEE-A", "EEE-B"],
-  ME: ["ME-A", "ME-B"],
-  CE: ["CE-A"],
-  General: ["Gen-A", "Gen-B"],
-  Finance: ["Fin-A"],
-  Marketing: ["Mkt-A"],
-};
-const SECTIONS = ["A", "B", "C", "D"];
+/* ─── Filter option constants ─── */
+const BRANCHES = ["CSE", "IT", "ECE", "EEE", "ME", "CE", "AI/ML"];
 const GRAD_YEARS = ["2024", "2025", "2026", "2027"];
 
-const rawStudents = [
-  { id: "CS21001", name: "Aditi Sharma", course: "B.Tech", stream: "CSE", dept: "CSE-A", section: "A", cgpa: 9.2, tenth: 94, twelfth: 91, year: "2025", status: "Placed", internship: true, internshipDetails: "Software Engineer Intern at Infosys (6 months)", email: "aditi.sharma@univ.edu", phone: "9812345670" },
-  { id: "IT21042", name: "Rahul Verma", course: "B.Tech", stream: "IT", dept: "IT-A", section: "B", cgpa: 8.7, tenth: 88, twelfth: 85, year: "2025", status: "Placed", internship: true, internshipDetails: "Data Analyst Intern at TCS (3 months)", email: "rahul.verma@univ.edu", phone: "9823456781" },
-  { id: "EC21078", name: "Priya Nair", course: "B.Tech", stream: "ECE", dept: "ECE-B", section: "A", cgpa: 8.4, tenth: 82, twelfth: 79, year: "2025", status: "Unplaced", internship: false, internshipDetails: "", email: "priya.nair@univ.edu", phone: "9834567892" },
-  { id: "CS21022", name: "Arun Krishnan", course: "B.Tech", stream: "CSE", dept: "CSE-B", section: "C", cgpa: 7.9, tenth: 76, twelfth: 73, year: "2025", status: "Placed", internship: true, internshipDetails: "Backend Developer Intern at Wipro (2 months)", email: "arun.krishnan@univ.edu", phone: "9845678903" },
-  { id: "ME21055", name: "Sneha Reddy", course: "B.Tech", stream: "ME", dept: "ME-A", section: "B", cgpa: 7.2, tenth: 70, twelfth: 68, year: "2026", status: "Unplaced", internship: false, internshipDetails: "", email: "sneha.reddy@univ.edu", phone: "9856789014" },
-  { id: "CS22001", name: "Vikram Patel", course: "B.Tech", stream: "CSE", dept: "CSE-C", section: "D", cgpa: 9.5, tenth: 97, twelfth: 95, year: "2026", status: "Unplaced", internship: true, internshipDetails: "ML Engineer Intern at Google (3 months)", email: "vikram.patel@univ.edu", phone: "9867890125" },
-  { id: "IT22033", name: "Meera Iyer", course: "B.Tech", stream: "IT", dept: "IT-B", section: "A", cgpa: 8.1, tenth: 80, twelfth: 78, year: "2026", status: "Placed", internship: true, internshipDetails: "Cloud Intern at Amazon (4 months)", email: "meera.iyer@univ.edu", phone: "9878901236" },
-  { id: "EC22019", name: "Karthik Menon", course: "B.Tech", stream: "ECE", dept: "ECE-A", section: "B", cgpa: 6.8, tenth: 65, twelfth: 62, year: "2026", status: "Unplaced", internship: false, internshipDetails: "", email: "karthik.menon@univ.edu", phone: "9889012347" },
-  { id: "CS21099", name: "Nisha Kapoor", course: "B.Tech", stream: "CSE", dept: "CSE-D", section: "A", cgpa: 8.9, tenth: 90, twelfth: 88, year: "2025", status: "Placed", internship: true, internshipDetails: "Frontend Developer Intern at Flipkart (6 months)", email: "nisha.kapoor@univ.edu", phone: "9890123458" },
-  { id: "CE21010", name: "Amit Joshi", course: "B.Tech", stream: "CE", dept: "CE-A", section: "C", cgpa: 7.5, tenth: 72, twelfth: 71, year: "2025", status: "Unplaced", internship: false, internshipDetails: "", email: "amit.joshi@univ.edu", phone: "9801234569" },
-  { id: "CS23011", name: "Divya Pillai", course: "B.Tech", stream: "CSE", dept: "CSE-A", section: "B", cgpa: 9.1, tenth: 93, twelfth: 90, year: "2027", status: "Unplaced", internship: true, internshipDetails: "Research Intern at IISc (2 months)", email: "divya.pillai@univ.edu", phone: "9812340001" },
-  { id: "MB21007", name: "Saurabh Singh", course: "MBA", stream: "Finance", dept: "Fin-A", section: "A", cgpa: 8.3, tenth: 84, twelfth: 82, year: "2025", status: "Placed", internship: true, internshipDetails: "Finance Intern at HDFC Bank (3 months)", email: "saurabh.singh@univ.edu", phone: "9823450012" },
-  { id: "EE21044", name: "Lakshmi Devi", course: "B.Tech", stream: "EEE", dept: "EEE-A", section: "C", cgpa: 7.8, tenth: 78, twelfth: 75, year: "2025", status: "Placed", internship: false, internshipDetails: "", email: "lakshmi.devi@univ.edu", phone: "9834560023" },
-  { id: "IT23055", name: "Rohan Gupta", course: "B.Tech", stream: "IT", dept: "IT-A", section: "D", cgpa: 8.6, tenth: 87, twelfth: 84, year: "2027", status: "Unplaced", internship: false, internshipDetails: "", email: "rohan.gupta@univ.edu", phone: "9845670034" },
-  { id: "CS22066", name: "Pooja Mehta", course: "B.Tech", stream: "CSE", dept: "CSE-B", section: "A", cgpa: 9.4, tenth: 96, twelfth: 93, year: "2026", status: "Placed", internship: true, internshipDetails: "Data Science Intern at Microsoft (4 months)", email: "pooja.mehta@univ.edu", phone: "9856780045" },
-];
-
-type Student = typeof rawStudents[0];
+type Student = {
+  id: number | string; name: string; course: string; stream: string; dept: string;
+  section: string; cgpa: number; tenth: number; twelfth: number; year: string;
+  status: string; internship: boolean; internshipDetails: string;
+  email: string; phone: string;
+};
 type SortKey = "cgpa" | "tenth" | "twelfth";
 type SearchType = "uid" | "name" | "email" | "phone";
 type ModalTab = "overview" | "academics" | "experience";
@@ -436,21 +405,23 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
   const muted = dk ? "text-gray-400" : "text-gray-500";
   const heading = dk ? "text-white" : "text-gray-900";
 
+  /* ─── API-fetched student data ─── */
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
   /* Search */
   const [searchType, setSearchType] = useState<SearchType>("name");
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  /* Primary filters - initialise from props */
-  const [course, setCourse] = useState(initialFilters?.course || "");
-  const [streams, setStreams] = useState<string[]>(initialFilters?.streams || []);
+  /* Primary filters */
+  const [branch, setBranch] = useState(initialFilters?.course || "");
   const [years, setYears] = useState<string[]>([]);
-  const [placementStatus, setPlacementStatus] = useState<"" | "Placed" | "Unplaced">("");
+  const [placementStatus, setPlacementStatus] = useState<"" | "PLACED" | "UNPLACED">("");
 
   /* More filters */
   const [moreOpen, setMoreOpen] = useState(false);
-  const [departments, setDepartments] = useState<string[]>(initialFilters?.departments || []);
-  const [sections, setSections] = useState<string[]>(initialFilters?.sections || []);
   const [cgpaRange, setCgpaRange] = useState<[number, number]>([0, 10]);
   const [internshipFilter, setInternshipFilter] = useState("Any");
 
@@ -476,69 +447,71 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
   /* Selected student */
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
-  /* Available stream/dept options based on selected course */
-  const streamOptions = course ? (STREAMS[course] || []) : Object.values(STREAMS).flat().filter((v, i, a) => a.indexOf(v) === i);
-  const deptOptions = streams.length > 0
-    ? streams.flatMap((s) => DEPARTMENTS[s] || []).filter((v, i, a) => a.indexOf(v) === i)
-    : Object.values(DEPARTMENTS).flat().filter((v, i, a) => a.indexOf(v) === i);
+  /* ─── Fetch students from backend ─── */
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("pageSize", String(PAGE_SIZE));
+    params.set("sortBy", sortKey === "cgpa" ? "cgpa" : "cgpa");
+    params.set("sortDir", sortDir);
+    if (searchQuery) { params.set("search", searchQuery); params.set("searchType", searchType); }
+    if (branch) params.set("branch", branch);
+    if (placementStatus) params.set("placementStatus", placementStatus);
+    if (cgpaRange[0] > 0) params.set("minCgpa", String(cgpaRange[0]));
+    if (cgpaRange[1] < 10) params.set("maxCgpa", String(cgpaRange[1]));
 
-  /* Filtered & sorted students */
-  const filteredStudents = useMemo(() => {
-    let result = rawStudents.filter((s) => {
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        if (searchType === "uid" && !s.id.toLowerCase().includes(q)) return false;
-        if (searchType === "name" && !s.name.toLowerCase().includes(q)) return false;
-        if (searchType === "email" && !s.email.toLowerCase().includes(q)) return false;
-        if (searchType === "phone" && !s.phone.includes(q)) return false;
-      }
-      if (course && s.course !== course) return false;
-      if (streams.length > 0 && !streams.includes(s.stream)) return false;
-      if (years.length > 0 && !years.includes(s.year)) return false;
-      if (placementStatus && s.status !== placementStatus) return false;
-      if (departments.length > 0 && !departments.includes(s.dept)) return false;
-      if (sections.length > 0 && !sections.includes(s.section)) return false;
-      if (s.cgpa < cgpaRange[0] || s.cgpa > cgpaRange[1]) return false;
-      if (internshipFilter === "Yes" && !s.internship) return false;
-      if (internshipFilter === "No" && s.internship) return false;
-      return true;
-    });
+    fetch(`${API_BASE}/university/students?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then(r => r.ok ? r.json() : { students: [], totalCount: 0 })
+      .then(data => {
+        const mapped = (data.students || []).map((s: any) => ({
+          id: s.id,
+          name: s.user?.name || "—",
+          course: "",
+          stream: s.branch || s.academicUnit?.name || "—",
+          dept: s.academicUnit?.name || "—",
+          section: "",
+          cgpa: s.cgpa || 0,
+          tenth: 0,
+          twelfth: 0,
+          year: s.passingYear ? String(s.passingYear) : "—",
+          status: s.placementStatus === "PLACED" ? "Placed" : "Unplaced",
+          internship: false,
+          internshipDetails: "",
+          email: s.user?.email || "",
+          phone: "",
+        }));
+        setAllStudents(mapped);
+        setTotalCount(data.totalCount || mapped.length);
+      })
+      .catch(() => { setAllStudents([]); setTotalCount(0); })
+      .finally(() => setLoading(false));
+  }, [page, sortKey, sortDir, searchQuery, searchType, branch, placementStatus, cgpaRange]);
 
-    result = [...result].sort((a, b) => {
-      const va = sortKey === "cgpa" ? a.cgpa : sortKey === "tenth" ? a.tenth : a.twelfth;
-      const vb = sortKey === "cgpa" ? b.cgpa : sortKey === "tenth" ? b.tenth : b.twelfth;
-      return sortDir === "desc" ? vb - va : va - vb;
-    });
-
-    return result;
-  }, [searchQuery, searchType, course, streams, years, placementStatus, departments, sections, cgpaRange, internshipFilter, sortKey, sortDir]);
-
-  /* Pagination */
-  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
-  const paginatedStudents = filteredStudents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  useEffect(() => { setPage(1); }, [filteredStudents.length]);
+  /* Since pagination is server-side now */
+  const filteredStudents = allStudents;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const paginatedStudents = filteredStudents;
 
   /* Active chips */
   const chips: { label: string; onRemove: () => void }[] = [
-    ...(course ? [{ label: `Course: ${course}`, onRemove: () => setCourse("") }] : []),
-    ...streams.map((s) => ({ label: `Stream: ${s}`, onRemove: () => setStreams(streams.filter((x) => x !== s)) })),
+    ...(branch ? [{ label: `Branch: ${branch}`, onRemove: () => setBranch("") }] : []),
     ...years.map((y) => ({ label: `Year: ${y}`, onRemove: () => setYears(years.filter((x) => x !== y)) })),
     ...(placementStatus ? [{ label: placementStatus, onRemove: () => setPlacementStatus("") }] : []),
-    ...departments.map((d) => ({ label: `Dept: ${d}`, onRemove: () => setDepartments(departments.filter((x) => x !== d)) })),
-    ...sections.map((s) => ({ label: `Sec: ${s}`, onRemove: () => setSections(sections.filter((x) => x !== s)) })),
     ...(cgpaRange[0] > 0 || cgpaRange[1] < 10 ? [{ label: `CGPA: ${cgpaRange[0].toFixed(1)}–${cgpaRange[1].toFixed(1)}`, onRemove: () => setCgpaRange([0, 10]) }] : []),
     ...(internshipFilter !== "Any" ? [{ label: `Internship: ${internshipFilter}`, onRemove: () => setInternshipFilter("Any") }] : []),
   ];
 
   /* Analytics */
-  const totalStudents = rawStudents.length;
-  const placedStudents = rawStudents.filter((s) => s.status === "Placed").length;
-  const placementRate = Math.round((placedStudents / totalStudents) * 100);
+  const placedStudents = allStudents.filter((s) => s.status === "Placed").length;
+  const placementRate = totalCount > 0 ? Math.round((placedStudents / totalCount) * 100) : 0;
   const analyticsCards = [
-    { label: "Total Students", value: totalStudents.toString(), icon: Users, color: "blue" },
+    { label: "Total Students", value: totalCount.toString(), icon: Users, color: "blue" },
     { label: "Placed Students", value: placedStudents.toString(), icon: UserCheck, color: "green" },
     { label: "Placement Rate", value: `${placementRate}%`, icon: TrendingUp, color: "indigo" },
-    { label: "Active Job Postings", value: "34", icon: Briefcase, color: "amber" },
+    { label: "Active Jobs", value: "—", icon: Briefcase, color: "amber" },
   ];
 
   const colorMap: Record<string, { bg: string; bgDk: string; text: string; textDk: string }> = {
@@ -640,12 +613,8 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
           <span className={`text-xs ${muted}`}>Filters:</span>
 
           <SingleSelectDropdown
-            label="Course" options={COURSES} selected={course}
-            onChange={(v) => { setCourse(v); setStreams([]); setDepartments([]); }} dk={dk}
-          />
-          <MultiSelectDropdown
-            label="Stream" options={streamOptions} selected={streams}
-            onChange={(v) => { setStreams(v); setDepartments([]); }} dk={dk}
+            label="Branch" options={BRANCHES} selected={branch}
+            onChange={(v) => { setBranch(v); setPage(1); }} dk={dk}
           />
           <MultiSelectDropdown
             label="Graduation Year" options={GRAD_YEARS} selected={years}
@@ -654,21 +623,21 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
 
           {/* Placement Status toggle */}
           <div className={`flex rounded-lg overflow-hidden border ${dk ? "border-white/10" : "border-gray-200"}`}>
-            {(["", "Placed", "Unplaced"] as const).map((opt) => (
+            {(["", "PLACED", "UNPLACED"] as const).map((opt) => (
               <button
                 key={opt || "All"}
-                onClick={() => setPlacementStatus(opt)}
+                onClick={() => { setPlacementStatus(opt); setPage(1); }}
                 className={`px-3 py-1.5 text-xs transition-colors ${
                   placementStatus === opt
-                    ? opt === "Placed"
+                    ? opt === "PLACED"
                       ? dk ? "bg-green-500/15 text-green-400" : "bg-green-50 text-green-600"
-                      : opt === "Unplaced"
+                      : opt === "UNPLACED"
                         ? dk ? "bg-amber-500/15 text-amber-400" : "bg-amber-50 text-amber-700"
                         : dk ? "bg-blue-500/15 text-blue-400" : "bg-blue-50 text-blue-600"
                     : dk ? "text-gray-400 hover:text-gray-300 hover:bg-white/[0.04]" : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                {opt || "All"}
+                {opt === "PLACED" ? "Placed" : opt === "UNPLACED" ? "Unplaced" : "All"}
               </button>
             ))}
           </div>
@@ -716,9 +685,9 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
             {chips.length > 0 && (
               <button
                 onClick={() => {
-                  setCourse(""); setStreams([]); setYears([]); setPlacementStatus("");
-                  setDepartments([]); setSections([]); setCgpaRange([0, 10]); setInternshipFilter("Any");
-                  setSearchInput(""); setSearchQuery("");
+                  setBranch(""); setYears([]); setPlacementStatus("");
+                  setCgpaRange([0, 10]); setInternshipFilter("Any");
+                  setSearchInput(""); setSearchQuery(""); setPage(1);
                 }}
                 className={`text-xs px-2.5 py-1 rounded-full border ${dk ? "border-white/10 text-gray-500 hover:text-gray-300" : "border-gray-200 text-gray-400 hover:text-gray-600"}`}
               >
@@ -730,25 +699,11 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
 
         {/* ── 4. More Filters Panel ── */}
         {moreOpen && (
-          <div className={`pt-3 mt-1 border-t grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 ${dk ? "border-white/8" : "border-gray-100"}`}>
+          <div className={`pt-3 mt-1 border-t grid grid-cols-1 sm:grid-cols-2 gap-4 ${dk ? "border-white/8" : "border-gray-100"}`}>
             <div>
-              <p className={`text-[10px] uppercase tracking-wide mb-2 ${muted}`}>Department</p>
-              <MultiSelectDropdown
-                label="Department" options={deptOptions} selected={departments}
-                onChange={setDepartments} dk={dk}
-              />
-            </div>
-            <div>
-              <p className={`text-[10px] uppercase tracking-wide mb-2 ${muted}`}>Section</p>
-              <MultiSelectDropdown
-                label="Section" options={SECTIONS} selected={sections}
-                onChange={setSections} dk={dk}
-              />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-1">
               <RangeSlider
                 label="CGPA" min={0} max={10} value={cgpaRange}
-                onChange={setCgpaRange} step={0.1} decimals={1} dk={dk}
+                onChange={(v) => { setCgpaRange(v); setPage(1); }} step={0.1} decimals={1} dk={dk}
               />
             </div>
             <div>

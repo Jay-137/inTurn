@@ -93,6 +93,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (authUser?.name) setUserName(authUser.name);
   }, [authUser]);
 
+  // Keep linkedPlatforms and appliedJobs in sync with studentProfile
+  useEffect(() => {
+    if (studentProfile) {
+      // Sync linked platforms
+      if (studentProfile.externalProfiles) {
+        const updated = { ...defaultPlatforms };
+        studentProfile.externalProfiles.forEach((p) => {
+          const key = p.platform.toLowerCase() as PlatformKey;
+          if (updated.hasOwnProperty(key)) {
+            updated[key] = true;
+          }
+        });
+        setLinkedPlatforms(updated);
+      }
+      
+      // Sync applied jobs
+      if (studentProfile.applications) {
+        const ids = studentProfile.applications.map((app: any) => String(app.jobId));
+        setAppliedJobs(ids);
+      }
+    }
+  }, [studentProfile]);
+
   const setAuthUser = (u: AuthUser | null) => {
     setAuthUserState(u);
     if (u) {

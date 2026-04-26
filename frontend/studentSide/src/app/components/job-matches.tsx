@@ -1,65 +1,29 @@
 import { useState, useEffect } from "react";
-import { Card, GradientButton, ProgressBar, Badge, MatchScoreCircle } from "./shared";
+import { Card, GradientButton, Badge, MatchScoreCircle } from "./shared";
 import { motion, AnimatePresence } from "motion/react";
 import { useApp } from "./app-context";
 import { useNavigate } from "react-router-dom";
 import {
-  Briefcase, MapPin, Clock, Zap, Filter, Search,
-  ChevronDown, Building2, Star, ArrowRight, CheckCircle2, X,
-  Target, TrendingUp, AlertCircle, Sparkles, Eye, EyeOff, Loader2
+  Briefcase, MapPin, Clock, Search,
+  Building2, ArrowRight, CheckCircle2, X,
+  Target, TrendingUp, AlertCircle, Sparkles, Loader2, AlertTriangle
 } from "lucide-react";
-import { jobApi, type Job } from "../../lib/api";
+import { jobApi, studentApi, type Job } from "../../lib/api";
 
-// ─── Static metadata since backend doesn't store location/tags/salary ────────
-
-const LOCATIONS = ["Remote", "Bangalore", "Mumbai", "Delhi", "Hyderabad", "Pune", "Hybrid"];
-const TAG_SETS = [
-  ["React", "TypeScript", "Tailwind CSS"],
-  ["Python", "Django", "PostgreSQL"],
-  ["Node.js", "React", "MongoDB"],
-  ["Go", "Docker", "AWS"],
-  ["Java", "Spring Boot", "Kafka"],
-  ["TypeScript", "GraphQL", "Apollo"],
-  ["Python", "TensorFlow", "NLP"],
-  ["AWS", "Kubernetes", "Terraform"],
-];
-const ROLE_MAP = (title: string): string => {
-  const t = title.toLowerCase();
-  if (t.includes("frontend") || t.includes("react") || t.includes("ui")) return "Frontend Developer";
-  if (t.includes("backend") || t.includes("node") || t.includes("java")) return "Backend Developer";
-  if (t.includes("full stack") || t.includes("full-stack")) return "Full Stack Developer";
-  if (t.includes("data") && t.includes("sci")) return "Data Scientist";
-  if (t.includes("ml") || t.includes("ai") || t.includes("machine")) return "AI/ML Engineer";
-  if (t.includes("devops") || t.includes("cloud") || t.includes("sre")) return "DevOps Engineer";
-  if (t.includes("intern")) return "SDE Intern";
-  return "SDE-1";
+type EnrichedJob = Job & {
+  role: string;
+  location: string;
+  tags: string[];
+  salary: string;
+  type: string;
+  posted: string;
+  description: string;
+  match: number | null;      // null = not yet checked
+  eligible: boolean | null;   // null = not yet checked
+  feedback: string[];
 };
 
-function getJobExtras(job: Job) {
-  return {
-    location: LOCATIONS[job.id % LOCATIONS.length],
-    tags: TAG_SETS[job.id % TAG_SETS.length],
-    salary: job.minCgpa >= 8 ? `${10 + job.id % 8}–${16 + job.id % 6} LPA` : `${30 + job.id % 20}K/month`,
-    role: ROLE_MAP(job.title),
-    type: job.title.toLowerCase().includes("intern") ? "Internship" : "Full-time",
-    posted: `${(job.id % 6) + 1} day${(job.id % 6) + 1 === 1 ? "" : "s"} ago`,
-    // Simulated skill alignment for UI (backend doesn't expose this pre-apply)
-    skillAlignment: [
-      { skill: "Primary Skill", match: 75 + (job.id % 20) },
-      { skill: "DSA", match: 70 + (job.id % 25) },
-      { skill: "Databases", match: 60 + (job.id % 30) },
-      { skill: "System Design", match: 40 + (job.id % 40) },
-    ],
-    description: `Join us as ${job.title}. Min CGPA ${job.minCgpa} required. Deadline: ${new Date(job.deadline).toLocaleDateString()}. Max ${job.maxBacklogs} active backlog(s) allowed.`,
-  };
-}
-
-// ─── Job Card ─────────────────────────────────────────────────────────────────
-
-type EnrichedJob = Job & ReturnType<typeof getJobExtras> & {
-  match: number;
-  eligible: boolean;
-};
+// ─── Job Card Component ──────────────────────────────────────────────────────
 
 function JobCard({
   job,
@@ -67,7 +31,9 @@ function JobCard({
   isExpanded,
   onToggleExpand,
   onApply,
+  onCheckEligibility,
   applying,
+  checking,
   preferredRoles,
   showMatchingTags,
 }: {
@@ -76,13 +42,15 @@ function JobCard({
   isExpanded: boolean;
   onToggleExpand: () => void;
   onApply: () => void;
+  onCheckEligibility: () => void;
   applying: boolean;
+  checking: boolean;
   preferredRoles?: string[];
   showMatchingTags?: boolean;
 }) {
   const isDeadlinePassed = new Date() > new Date(job.deadline);
-  const isMatched = showMatchingTags && job.match >= 70 && preferredRoles?.includes(job.role);
-  const isEligible = showMatchingTags && job.match >= 70 && !preferredRoles?.includes(job.role);
+  const hasScore = job.match !== null;
+  const isMatched = showMatchingTags && hasScore && (job.match ?? 0) >= 70 && preferredRoles?.some(r => r.toLowerCase() === job.role.toLowerCase());
 
   return (
     <Card hover className={`cursor-pointer ${isMatched ? "!border-indigo-200 !bg-indigo-50/20" : ""}`}>
@@ -96,10 +64,6 @@ function JobCard({
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-gray-900">{job.title}</h3>
                 {isMatched && <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Matched</Badge>}
-                {isEligible && <Badge variant="info"><Target className="w-3 h-3 mr-1" /> Eligible</Badge>}
-                {showMatchingTags && !isApplied && job.match < 70 && (
-                  <Badge variant="neutral"><AlertCircle className="w-3 h-3 mr-1" /> Low match</Badge>
-                )}
                 {isApplied && <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Applied</Badge>}
                 {isDeadlinePassed && <Badge variant="warning"><Clock className="w-3 h-3 mr-1" /> Closed</Badge>}
               </div>
@@ -110,7 +74,14 @@ function JobCard({
               </div>
             </div>
           </div>
-          <MatchScoreCircle score={job.match} size={56} />
+          {/* Only show score circle AFTER user has checked eligibility */}
+          {hasScore ? (
+            <MatchScoreCircle score={job.match!} size={56} />
+          ) : (
+            <div className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100 flex items-center gap-1 shrink-0">
+              <Sparkles className="w-3 h-3" /> Not checked
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -138,39 +109,69 @@ function JobCard({
             <div className="pt-4 mt-4 border-t border-gray-100">
               <p className="text-sm text-gray-600 mb-4">{job.description}</p>
 
-              <h4 className="text-sm text-gray-900 mb-3">Estimated Skill Alignment</h4>
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                {job.skillAlignment.map((s) => (
-                  <div key={s.skill}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-gray-600">{s.skill}</span>
-                      <span className="text-xs text-gray-500">{s.match}%</span>
-                    </div>
-                    <ProgressBar
-                      value={s.match}
-                      color={s.match >= 80 ? "emerald" : s.match >= 60 ? "indigo" : "amber"}
-                      size="sm"
-                    />
+              {/* Eligibility Feedback (only shown after checking) */}
+              {job.feedback.length > 0 && (
+                <div className="mb-4">
+                  <h4 className="text-sm text-gray-900 mb-2">Match Breakdown</h4>
+                  <div className="space-y-1.5">
+                    {job.feedback.map((msg, idx) => (
+                      <div key={idx} className={`text-xs p-2.5 rounded-lg flex items-start gap-2 ${
+                        msg.startsWith("✓")
+                          ? "bg-emerald-50 text-emerald-700"
+                          : msg.startsWith("~")
+                            ? "bg-amber-50 text-amber-700"
+                            : msg.startsWith("✗")
+                              ? "bg-red-50 text-red-700"
+                              : "bg-gray-50 text-gray-600"
+                      }`}>
+                        {msg.startsWith("✓") ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        ) : msg.startsWith("~") ? (
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        ) : msg.startsWith("✗") ? (
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        )}
+                        <span>{msg}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
 
-              <p className="text-xs text-gray-400 mb-4 italic">
-                * Actual match score is calculated by the backend when you apply.
-              </p>
+              {hasScore && (
+                <p className="text-xs text-gray-400 mb-4 italic">
+                  * Match score is calculated based on skill priorities set by the recruiter.
+                </p>
+              )}
 
               {!isApplied && !isDeadlinePassed ? (
-                <div className="flex items-center gap-3">
-                  <GradientButton size="sm" onClick={onApply} className={applying ? "opacity-70 pointer-events-none" : ""}>
-                    {applying ? (
-                      <><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Applying…</>
-                    ) : (
-                      <>Apply Now <ArrowRight className="w-4 h-4 inline ml-1" /></>
-                    )}
-                  </GradientButton>
-                  <GradientButton variant="outline" size="sm">
-                    <Star className="w-4 h-4 inline mr-1" /> Save
-                  </GradientButton>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <GradientButton size="sm" onClick={onApply} className={applying ? "opacity-70 pointer-events-none" : ""}>
+                      {applying ? (
+                        <><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Applying…</>
+                      ) : (
+                        <>Apply Now <ArrowRight className="w-4 h-4 inline ml-1" /></>
+                      )}
+                    </GradientButton>
+                    <GradientButton
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCheckEligibility();
+                      }}
+                      className={checking ? "opacity-70 pointer-events-none" : ""}
+                    >
+                      {checking ? (
+                        <><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Checking…</>
+                      ) : (
+                        <><Sparkles className="w-4 h-4 inline mr-1" /> {hasScore ? "Recheck" : "Check Eligibility"}</>
+                      )}
+                    </GradientButton>
+                  </div>
                 </div>
               ) : isDeadlinePassed ? (
                 <div className="flex items-center gap-2 text-sm text-amber-600">
@@ -193,7 +194,7 @@ function JobCard({
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export function JobMatches() {
-  const { appliedJobs, addAppliedJob, preferredRoles, studentProfile } = useApp();
+  const { appliedJobs, addAppliedJob, preferredRoles, studentProfile, setStudentProfile, authUser } = useApp();
   const navigate = useNavigate();
 
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -208,6 +209,11 @@ export function JobMatches() {
   const [includeNotMatched, setIncludeNotMatched] = useState(false);
   const [showConfirm, setShowConfirm] = useState<number | null>(null);
 
+  // Per-job eligibility state
+  const [checkingJob, setCheckingJob] = useState<number | null>(null);
+  const [jobScores, setJobScores] = useState<Record<number, { match: number; feedback: string[]; eligible: boolean }>>({});
+  const [checkError, setCheckError] = useState<Record<number, string>>({});
+
   useEffect(() => {
     setLoading(true);
     jobApi
@@ -217,24 +223,68 @@ export function JobMatches() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Enrich jobs with static metadata + match estimation
-  function estimateMatch(job: Job): number {
-    if (!studentProfile) return 55;
-    let score = 65;
-    if (studentProfile.cgpa >= job.minCgpa) score += 20;
-    if (studentProfile.backlogCount <= job.maxBacklogs) score += 10;
-    if (studentProfile.cgpa >= 8.5) score += 5;
-    return Math.min(score, 98);
-  }
+  /**
+   * Check eligibility for a specific job.
+   * 1. Generate/refresh skill vector
+   * 2. Re-fetch jobs (which re-runs evaluateEligibility on the backend)
+   * 3. Extract the score for this specific job
+   */
+  const handleCheckEligibility = async (jobId: number) => {
+    setCheckingJob(jobId);
+    setCheckError((prev) => ({ ...prev, [jobId]: "" }));
+    try {
+      // Step 1: Regenerate the student's skill vector from linked platforms
+      await studentApi.generateSkills();
 
-  const enrichedJobs: EnrichedJob[] = jobs.map((j) => ({
-    ...j,
-    ...getJobExtras(j),
-    match: estimateMatch(j),
-    eligible: studentProfile
-      ? studentProfile.cgpa >= j.minCgpa && studentProfile.backlogCount <= j.maxBacklogs
-      : false,
-  }));
+      // Step 2: Re-fetch jobs (backend runs evaluateEligibility per job per student)
+      const updatedJobs = await jobApi.getJobs();
+      setJobs(updatedJobs);
+
+      // Step 3: Extract the score for this specific job
+      const thisJob: any = updatedJobs.find((j: any) => j.id === jobId);
+      if (thisJob) {
+        setJobScores((prev) => ({
+          ...prev,
+          [jobId]: {
+            match: thisJob.matchScore ?? 0,
+            feedback: thisJob.feedback || [],
+            eligible: thisJob.eligibilityStatus ?? false,
+          },
+        }));
+      }
+
+      // Refresh student profile
+      if (authUser) {
+        const p = await studentApi.getProfile(authUser.id);
+        setStudentProfile(p);
+      }
+    } catch (err: any) {
+      console.error("Failed to check eligibility", err);
+      const msg = err.response?.data?.error || err.message || "Unknown error";
+      setCheckError((prev) => ({ ...prev, [jobId]: msg }));
+    } finally {
+      setCheckingJob(null);
+    }
+  };
+
+  // Build enriched jobs — merge backend data with per-job checked state
+  const enrichedJobs: EnrichedJob[] = jobs.map((j: any) => {
+    const checkedData = jobScores[j.id];
+    return {
+      ...j,
+      role: j.title,
+      location: j.location || "Remote",
+      tags: Array.isArray(j.tags) ? j.tags : ["General"],
+      salary: j.salary || "Unspecified",
+      type: j.type || "Full-time",
+      posted: "Recently",
+      description: `Join us as ${j.title}. Min CGPA ${j.minCgpa} required. Max ${j.maxBacklogs} active backlog(s) allowed.`,
+      // Only show match after user explicitly checks
+      match: checkedData ? checkedData.match : null,
+      eligible: checkedData ? checkedData.eligible : null,
+      feedback: checkedData ? checkedData.feedback : [],
+    };
+  });
 
   const handleApply = async (jobId: number) => {
     setApplyingJob(jobId);
@@ -244,7 +294,6 @@ export function JobMatches() {
       addAppliedJob(String(jobId));
       setShowConfirm(null);
       setExpandedJob(null);
-      // Show actual match score returned by backend
       if (res.application.matchScore !== null) {
         const score = Math.round(res.application.matchScore * 100);
         console.log(`Backend match score for job ${jobId}: ${score}%`);
@@ -259,18 +308,22 @@ export function JobMatches() {
 
   const uniqueRoles = ["All", ...Array.from(new Set(enrichedJobs.map((j) => j.role)))];
 
+  // Match tab: only show jobs that have been checked AND meet the threshold
   const matchedJobs = preferredRoles.length > 0
-    ? enrichedJobs.filter((j) => preferredRoles.includes(j.role) && j.match >= 70)
+    ? enrichedJobs.filter((j) =>
+        preferredRoles.some(role => role.toLowerCase() === j.role.toLowerCase()) &&
+        j.match !== null &&
+        j.match >= 70
+      )
     : [];
 
   const allFilteredJobs = enrichedJobs
     .filter((j) => {
-      if (roleFilter !== "All" && j.role !== roleFilter) return false;
+      if (roleFilter !== "All" && j.role.toLowerCase() !== roleFilter.toLowerCase()) return false;
       if (search && !j.title.toLowerCase().includes(search.toLowerCase())) return false;
-      if (!includeNotMatched && j.match < 70 && !appliedJobs.includes(String(j.id))) return false;
       return true;
     })
-    .sort((a, b) => b.match - a.match);
+    .sort((a, b) => (b.match ?? -1) - (a.match ?? -1));
 
   if (loading) {
     return (
@@ -356,7 +409,11 @@ export function JobMatches() {
                 ))}
               </div>
               <p className="text-sm text-muted-foreground">
-                <span className="text-gray-900">{matchedJobs.length}</span> jobs matching your preferred roles
+                {matchedJobs.length > 0 ? (
+                  <><span className="text-gray-900">{matchedJobs.length}</span> jobs matching your preferred roles with ≥70% alignment</>
+                ) : (
+                  <>Click "Check Eligibility" on jobs in the All Jobs tab to see your matches here.</>
+                )}
               </p>
               <div className="space-y-4">
                 {matchedJobs.map((job, idx) => (
@@ -373,7 +430,9 @@ export function JobMatches() {
                       isExpanded={expandedJob === job.id}
                       onToggleExpand={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
                       onApply={() => setShowConfirm(job.id)}
+                      onCheckEligibility={() => handleCheckEligibility(job.id)}
                       applying={applyingJob === job.id}
+                      checking={checkingJob === job.id}
                       preferredRoles={preferredRoles}
                       showMatchingTags
                     />
@@ -391,7 +450,7 @@ export function JobMatches() {
           <div className="flex items-start gap-3 p-3.5 bg-blue-50 rounded-xl border border-blue-100">
             <TrendingUp className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-700">
-              Browse all available placement drives. Match scores are estimated — actual scores are calculated when you apply.
+              Click "Check Eligibility" on any job to see your match score and a detailed skill breakdown.
             </p>
           </div>
 
@@ -427,24 +486,6 @@ export function JobMatches() {
             <p className="text-sm text-muted-foreground">
               Showing <span className="text-gray-900">{allFilteredJobs.length}</span> positions
             </p>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setIncludeNotMatched(!includeNotMatched)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
-                  includeNotMatched
-                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                {includeNotMatched ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                Include Low Match
-              </button>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Filter className="w-4 h-4" />
-                <span>Sorted by match</span>
-                <ChevronDown className="w-3 h-3" />
-              </div>
-            </div>
           </div>
 
           <div className="space-y-4">
@@ -456,13 +497,21 @@ export function JobMatches() {
                     {applyError[job.id]}
                   </div>
                 )}
+                {checkError[job.id] && (
+                  <div className="mb-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {checkError[job.id]}
+                  </div>
+                )}
                 <JobCard
                   job={job}
                   isApplied={appliedJobs.includes(String(job.id))}
                   isExpanded={expandedJob === job.id}
                   onToggleExpand={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
                   onApply={() => setShowConfirm(job.id)}
+                  onCheckEligibility={() => handleCheckEligibility(job.id)}
                   applying={applyingJob === job.id}
+                  checking={checkingJob === job.id}
                   preferredRoles={preferredRoles}
                   showMatchingTags
                 />

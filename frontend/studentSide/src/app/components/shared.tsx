@@ -7,12 +7,14 @@ export function GradientButton({
   className = "",
   size = "md",
   variant = "primary",
+  type = "button",
 }: {
   children: ReactNode;
-  onClick?: () => void;
+  onClick?: (e?: any) => void;
   className?: string;
   size?: "sm" | "md" | "lg";
   variant?: "primary" | "outline" | "ghost";
+  type?: "button" | "submit" | "reset";
 }) {
   const sizeClasses = {
     sm: "px-3 py-1.5 text-sm",
@@ -29,6 +31,7 @@ export function GradientButton({
     <motion.button
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
+      type={type}
       onClick={onClick}
       className={`rounded-xl transition-all duration-200 cursor-pointer ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
     >
