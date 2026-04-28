@@ -821,11 +821,20 @@ const deleteAcademicUnit = async (req, res) => {
 const updateJobStatus = async (req, res) => {
     try {
         const jobId = parseInt(req.params.jobId, 10);
-        const { status } = req.body; // 'APPROVED' or 'REJECTED'
+        const { status, rejectionReason, universityDeadline } = req.body;
+
+        const data = { approvalStatus: status };
+
+        if (status === 'REJECTED') {
+            data.rejectionReason = rejectionReason || 'Did not meet university criteria';
+        }
+        if (status === 'APPROVED' && universityDeadline) {
+            data.universityDeadline = new Date(universityDeadline);
+        }
 
         const job = await prisma.job.update({
             where: { id: jobId },
-            data: { approvalStatus: status }
+            data
         });
         res.status(200).json({ message: `Job ${status}`, job });
     } catch (error) {
@@ -884,6 +893,130 @@ const updateSettings = async (req, res) => {
     }
 };
 
+// [UNIVERSITY ONLY] Get all applications with PENDING_REVIEW status
+const getPendingApplications = async (req, res) => {
+    try {
+        const applications = await prisma.application.findMany({
+            where: { status: 'PENDING_REVIEW' },
+            include: {
+                student: {
+                    include: {
+                        user: { select: { name: true, email: true } },
+                        academicUnit: { select: { name: true } }
+                    }
+                },
+                job: { include: { company: { select: { name: true } } } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.status(200).json({ applications });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch pending applications.' });
+    }
+};
+
+// [UNIVERSITY ONLY] Approve a single application (forward to recruiter)
+const approveApplication = async (req, res) => {
+    try {
+        const applicationId = parseInt(req.params.id, 10);
+        const application = await prisma.application.update({
+            where: { id: applicationId },
+            data: { status: 'FORWARDED_TO_RECRUITER', universityRemarks: null }
+        });
+
+        // Notify student
+        const fullApp = await prisma.application.findUnique({
+            where: { id: applicationId },
+            include: { student: true, job: { select: { title: true } } }
+        });
+        if (fullApp) {
+            await prisma.notification.create({
+                data: {
+                    userId: fullApp.student.userId,
+                    type: 'success',
+                    message: `Your application for "${fullApp.job.title}" has been forwarded to the recruiter.`
+                }
+            });
+        }
+
+        res.status(200).json({ message: 'Application forwarded to recruiter.', application });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to approve application.' });
+    }
+};
+
+// [UNIVERSITY ONLY] Reject a single application with reason
+const rejectApplication = async (req, res) => {
+    try {
+        const applicationId = parseInt(req.params.id, 10);
+        const { reason } = req.body;
+
+        const application = await prisma.application.update({
+            where: { id: applicationId },
+            data: {
+                status: 'REJECTED_BY_UNIVERSITY',
+                universityRemarks: reason || 'Rejected by university'
+            }
+        });
+
+        // Notify student
+        const fullApp = await prisma.application.findUnique({
+            where: { id: applicationId },
+            include: { student: true, job: { select: { title: true } } }
+        });
+        if (fullApp) {
+            await prisma.notification.create({
+                data: {
+                    userId: fullApp.student.userId,
+                    type: 'warning',
+                    message: `Your application for "${fullApp.job.title}" was rejected by the university. Reason: ${reason || 'Not specified'}`
+                }
+            });
+        }
+
+        res.status(200).json({ message: 'Application rejected.', application });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to reject application.' });
+    }
+};
+
+// [UNIVERSITY ONLY] Mass-forward all pending applications for a specific job
+const massForwardApplications = async (req, res) => {
+    try {
+        const jobId = parseInt(req.params.jobId, 10);
+
+        const result = await prisma.application.updateMany({
+            where: { jobId, status: 'PENDING_REVIEW' },
+            data: { status: 'FORWARDED_TO_RECRUITER' }
+        });
+
+        // Notify all affected students
+        const forwardedApps = await prisma.application.findMany({
+            where: { jobId, status: 'FORWARDED_TO_RECRUITER' },
+            include: { student: true, job: { select: { title: true } } }
+        });
+        if (forwardedApps.length > 0) {
+            await prisma.notification.createMany({
+                data: forwardedApps.map(app => ({
+                    userId: app.student.userId,
+                    type: 'success',
+                    message: `Your application for "${app.job.title}" has been forwarded to the recruiter.`
+                }))
+            });
+        }
+
+        res.status(200).json({
+            message: `${result.count} application(s) forwarded to recruiter.`,
+            count: result.count
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to mass-forward applications.' });
+    }
+};
 
 // [UNIVERSITY ONLY] List all student certifications for review
 const getCertifications = async (req, res) => {
@@ -954,5 +1087,9 @@ module.exports = {
     getSettings,
     updateSettings,
     getCertifications,
-    verifyCertification
+    verifyCertification,
+    getPendingApplications,
+    approveApplication,
+    rejectApplication,
+    massForwardApplications
 };

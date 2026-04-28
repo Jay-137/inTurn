@@ -476,7 +476,7 @@ const getDashboardStats = async (req, res) => {
         const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
         if (!student) return res.status(404).json({ error: 'Student not found' });
 
-        const shortlistedStatuses = ['SHORTLISTED', 'ACCEPTED_BY_RECRUITER', 'SELECTED_BY_RECRUITER'];
+        const shortlistedStatuses = ['SHORTLISTED_BY_RECRUITER'];
         const shortlistedApplications = await prisma.application.findMany({
             where: {
                 studentId: student.id,

@@ -5,7 +5,7 @@ import {
   Github, Code2, Trophy, CheckCircle2, Clock, ExternalLink,
   RefreshCw, AlertCircle, Plus, X, Link2, Briefcase, Award,
   Heart, Video, Upload, GraduationCap, BookOpen, Loader2,
-  BarChart3
+  BarChart3, FileText
 } from "lucide-react";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { studentApi, uploadVideoToCloudinary } from "../../lib/api";
@@ -774,6 +774,8 @@ function SoftSkillsTab() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const visumeUploaded = !!studentProfile?.videoResumeUrl;
+  const [resumeUrl, setResumeUrl] = useState(studentProfile?.resumeUrl || "");
+  const [resumeSaving, setResumeSaving] = useState(false);
 
   useEffect(() => {
     setSelectedSkills(studentProfile?.softSkills?.map(s => s.name) || []);
@@ -875,6 +877,45 @@ function SoftSkillsTab() {
               await studentApi.updateProfile({ videoResumeUrl: "" });
               if (authUser) setStudentProfile(await studentApi.getProfile(authUser.id));
             }} className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer">Remove visume</button>
+          </div>
+        )}
+      </Card>
+
+      {/* Resume URL */}
+      <Card>
+        <h3 className="text-gray-900 flex items-center gap-2 mb-2"><FileText className="w-5 h-5 text-indigo-500" /> Resume</h3>
+        <p className="text-sm text-muted-foreground mb-4">Provide a link to your resume (Google Drive, Dropbox, etc.). Recruiters will see this when reviewing your application.</p>
+        <div className="flex items-center gap-3">
+          <input
+            type="url"
+            value={resumeUrl}
+            onChange={(e) => setResumeUrl(e.target.value)}
+            placeholder="https://drive.google.com/file/d/..."
+            className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition-all"
+          />
+          <button
+            onClick={async () => {
+              setResumeSaving(true);
+              try {
+                await studentApi.updateProfile({ resumeUrl });
+                if (authUser) setStudentProfile(await studentApi.getProfile(authUser.id));
+                toast.success("Resume link saved.");
+              } catch (e) {
+                toast.error("Failed to save resume link.");
+              } finally {
+                setResumeSaving(false);
+              }
+            }}
+            disabled={resumeSaving}
+            className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            {resumeSaving ? "Saving..." : "Save"}
+          </button>
+        </div>
+        {studentProfile?.resumeUrl && (
+          <div className="mt-3 flex items-center gap-2 text-xs">
+            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+            <a href={studentProfile.resumeUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-700">View current resume</a>
           </div>
         )}
       </Card>

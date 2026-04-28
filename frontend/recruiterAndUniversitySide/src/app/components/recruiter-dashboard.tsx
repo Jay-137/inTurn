@@ -10,7 +10,7 @@ import { useTheme } from "./theme-context";
 import { useNavigate } from "react-router";
 import { PostJob } from "./post-job";
 import { JobPostings } from "./job-postings";
-import { Shortlisted, PlacementAnalytics } from "./recruiter-subpages";
+import { Shortlisted, PlacementAnalytics, JobApplicants } from "./recruiter-subpages";
 
 /* ─── Sidebar Config ─── */
 const sidebarNav = [
@@ -188,6 +188,8 @@ export function RecruiterDashboard() {
   const [activeNav, setActiveNav] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  const [selectedJobTitle, setSelectedJobTitle] = useState<string>("");
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -204,7 +206,8 @@ export function RecruiterDashboard() {
         console.error("Failed to fetch dashboard data", err);
       }
     };
-    if (activeNav === "dashboard") {
+    // Fetch for dashboard and job-postings views
+    if (activeNav === "dashboard" || activeNav === "job-postings") {
       fetchDashboard();
     }
   }, [activeNav]);
@@ -231,7 +234,9 @@ export function RecruiterDashboard() {
                 activeNav === "dashboard" ? "Dashboard" :
                 activeNav === "job-postings" ? "Job Postings" :
                 activeNav === "post-job" ? "Post Job" :
-                activeNav === "shortlisted" ? "Shortlisted" : "Placement Analytics"
+                activeNav === "shortlisted" ? "Shortlisted" :
+                activeNav === "job-applicants" ? `Applicants — ${selectedJobTitle}` :
+                "Placement Analytics"
               }</h1>
             </div>
             <div className="flex items-center gap-3">
@@ -258,7 +263,15 @@ export function RecruiterDashboard() {
           {activeNav === "post-job" ? (
             <PostJob onNavigate={setActiveNav} />
           ) : activeNav === "job-postings" ? (
-            <JobPostings dk={dk} card={card} heading={heading} muted={muted} onNavigate={setActiveNav} />
+            <JobPostings dk={dk} card={card} heading={heading} muted={muted} jobs={dashboardData?.activeJobs || []} onNavigate={(id, meta) => {
+              if (id === "job-applicants" && meta?.jobId) {
+                setSelectedJobId(meta.jobId);
+                setSelectedJobTitle(meta.jobTitle || "");
+              }
+              setActiveNav(id);
+            }} />
+          ) : activeNav === "job-applicants" && selectedJobId ? (
+            <JobApplicants jobId={selectedJobId} onBack={() => setActiveNav("job-postings")} />
           ) : activeNav === "shortlisted" ? (
             <Shortlisted />
           ) : activeNav === "analytics" ? (
@@ -306,11 +319,20 @@ export function RecruiterDashboard() {
                       <div>
                         <div className="flex items-center gap-2">
                           <p className={`text-sm ${dk ? "text-gray-200" : "text-gray-800"}`}>{job.title}</p>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600"}`}>
-                            {job.status}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                            job.status === "APPROVED" 
+                              ? (dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600")
+                              : job.status === "REJECTED"
+                                ? (dk ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-600")
+                                : (dk ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600")
+                          }`}>
+                            {job.status === "PENDING_REVIEW" ? "Pending University Review" : job.status}
                           </span>
                         </div>
                         <p className={`text-xs mt-0.5 ${muted}`}>{job.posted}</p>
+                        {job.status === "REJECTED" && job.rejectionReason && (
+                          <p className={`text-[10px] mt-1 ${dk ? "text-red-400" : "text-red-600"}`}>Reason: {job.rejectionReason}</p>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className={`text-xl tracking-tight ${heading}`}>{job.applicants}</p>

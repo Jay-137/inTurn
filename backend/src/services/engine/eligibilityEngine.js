@@ -142,10 +142,38 @@ const CATEGORY_MATCH_FACTOR = 0.5; // 50% credit for same-category match
 
 /**
  * Normalize a skill name for comparison.
- * Strips whitespace, dots, and converts to uppercase.
+ * For simple names (no parens/slashes), strips dots and trailing "JS"
+ * so "React.js", "ReactJS", "react" all become "REACT".
+ * For compound names like "Frontend (React/JS)", keeps structure intact.
  */
 function normalizeSkillName(name) {
-    return name.trim().toUpperCase();
+    let n = name.trim().toUpperCase();
+    if (!/[()\/]/.test(n)) {
+        n = n.replace(/\./g, '');
+        n = n.replace(/JS$/, '');
+        n = n.replace(/\s+/g, ' ').trim();
+    } else {
+        n = n.replace(/\s+/g, ' ').trim();
+    }
+    return n || name.trim().toUpperCase();
+}
+
+/**
+ * Extract individual sub-skill names from a compound skill name.
+ * "Frontend (React/JS)" -> ["FRONTEND", "REACT", "JS"]
+ * "Backend (Node.js/Express)" -> ["BACKEND", "NODE", "EXPRESS"]
+ * "React" -> ["REACT"]
+ */
+function extractSubSkills(skillName) {
+    const upper = skillName.trim().toUpperCase();
+    const tokens = upper
+        .replace(/[()]/g, ' ')
+        .replace(/[\/,;|&]/g, ' ')
+        .replace(/\./g, '')
+        .split(/\s+/)
+        .map(t => t.replace(/JS$/, '') || t)
+        .filter(t => t.length >= 2);
+    return [...new Set(tokens)];
 }
 
 function normalizeBranchName(name) {
@@ -281,6 +309,14 @@ function getSkillCategory(skillName) {
         }
     }
 
+    // Try sub-skill extraction for compound names
+    const subSkills = extractSubSkills(skillName);
+    for (const sub of subSkills) {
+        if (SKILL_CATEGORIES[sub]) {
+            return SKILL_CATEGORIES[sub];
+        }
+    }
+
     return null;
 }
 
@@ -292,12 +328,14 @@ function getSkillCategory(skillName) {
 function findBestMatch(requiredSkillName, studentSkillEntries) {
     const reqNorm = normalizeSkillName(requiredSkillName);
     const reqCategory = getSkillCategory(requiredSkillName);
+    const reqSubSkills = extractSubSkills(requiredSkillName);
 
     let bestExact = null;
     let bestCategory = null;
 
     for (const { name, score } of studentSkillEntries) {
         const studentNorm = normalizeSkillName(name);
+        const studentSubSkills = extractSubSkills(name);
 
         // Check exact match (with fuzzy normalization)
         if (studentNorm === reqNorm ||
@@ -306,9 +344,30 @@ function findBestMatch(requiredSkillName, studentSkillEntries) {
             if (!bestExact || score > bestExact.score) {
                 bestExact = { score, matchType: 'exact', matchedSkillName: name };
             }
+            continue;
         }
+
+        // Check sub-skill overlap: e.g. required "Frontend (React/JS)",
+        // student has "React.js" -> both extract "REACT"
+        let subMatch = false;
+        for (const rSub of reqSubSkills) {
+            for (const sSub of studentSubSkills) {
+                if (rSub === sSub && rSub.length >= 2) {
+                    subMatch = true;
+                    break;
+                }
+            }
+            if (subMatch) break;
+        }
+        if (subMatch) {
+            if (!bestExact || score > bestExact.score) {
+                bestExact = { score, matchType: 'exact', matchedSkillName: name };
+            }
+            continue;
+        }
+
         // Check category match
-        else if (reqCategory) {
+        if (reqCategory) {
             const studentCategory = getSkillCategory(name);
             if (studentCategory && studentCategory === reqCategory) {
                 if (!bestCategory || score > bestCategory.score) {
@@ -320,7 +379,6 @@ function findBestMatch(requiredSkillName, studentSkillEntries) {
 
     if (bestExact) return bestExact;
     if (bestCategory) {
-        // Apply partial credit factor for category matches
         return {
             score: bestCategory.score * CATEGORY_MATCH_FACTOR,
             matchType: 'category',

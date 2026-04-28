@@ -120,6 +120,8 @@ model Job {
   type           String? // e.g., "Internship", "Full-time"
   tags           Json? // e.g., ["React", "Node.js"]
   approvalStatus String   @default("PENDING") // e.g., "PENDING", "APPROVED", "REJECTED"
+  rejectionReason String? // University's reason for rejecting the job
+  universityDeadline DateTime? // Earlier deadline set by university for student applications
   createdAt      DateTime @default(now())
 
   company Company? @relation(fields: [companyId], references: [id])
@@ -144,7 +146,8 @@ model Application {
   jobId      Int
   studentId  Int
   matchScore Float? // Nullable initially, calculated upon application
-  status     String // e.g., "APPLIED", "REJECTED_ELIGIBILITY", "APPROVED"
+  status     String // e.g., "PENDING_REVIEW", "FORWARDED_TO_RECRUITER", "REJECTED_BY_UNIVERSITY"
+  universityRemarks String? // Reason if university rejects the application
   createdAt  DateTime @default(now())
 
   job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)

@@ -36,6 +36,7 @@ function JobCard({
   checking,
   preferredRoles,
   showMatchingTags,
+  applicationDetails,
 }: {
   job: EnrichedJob;
   isApplied: boolean;
@@ -47,6 +48,7 @@ function JobCard({
   checking: boolean;
   preferredRoles?: string[];
   showMatchingTags?: boolean;
+  applicationDetails?: any;
 }) {
   const isDeadlinePassed = new Date() > new Date(job.deadline);
   const hasScore = job.match !== null;
@@ -64,7 +66,17 @@ function JobCard({
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-gray-900">{job.title}</h3>
                 {isMatched && <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Matched</Badge>}
-                {isApplied && <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Applied</Badge>}
+                {isApplied && (
+                  <Badge variant={
+                    applicationDetails?.status?.includes("REJECTED") ? "warning" :
+                    applicationDetails?.status === "PENDING_REVIEW" ? "info" :
+                    "success"
+                  }>
+                    {applicationDetails?.status === "REJECTED_BY_UNIVERSITY" ? "Rejected by University" :
+                     applicationDetails?.status === "PENDING_REVIEW" ? "Pending University Review" :
+                     applicationDetails?.status ? applicationDetails.status.replace(/_/g, " ") : "Applied"}
+                  </Badge>
+                )}
                 {isDeadlinePassed && <Badge variant="warning"><Clock className="w-3 h-3 mr-1" /> Closed</Badge>}
               </div>
               <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
@@ -108,6 +120,13 @@ function JobCard({
           >
             <div className="pt-4 mt-4 border-t border-gray-100">
               <p className="text-sm text-gray-600 mb-4">{job.description}</p>
+
+              {applicationDetails?.status === "REJECTED_BY_UNIVERSITY" && applicationDetails?.universityRemarks && (
+                <div className="mb-4 text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2 flex items-center gap-2 border border-red-100">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span><strong>University Remarks:</strong> {applicationDetails.universityRemarks}</span>
+                </div>
+              )}
 
               {/* Eligibility Feedback (only shown after checking) */}
               {job.feedback.length > 0 && (
@@ -194,7 +213,7 @@ function JobCard({
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export function JobMatches() {
-  const { appliedJobs, addAppliedJob, preferredRoles, studentProfile, setStudentProfile, authUser } = useApp();
+  const { appliedJobs, applicationsMap, addAppliedJob, preferredRoles, studentProfile, setStudentProfile, authUser } = useApp();
   const navigate = useNavigate();
 
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -435,6 +454,7 @@ export function JobMatches() {
                       checking={checkingJob === job.id}
                       preferredRoles={preferredRoles}
                       showMatchingTags
+                      applicationDetails={applicationsMap[String(job.id)]}
                     />
                   </motion.div>
                 ))}
@@ -514,6 +534,7 @@ export function JobMatches() {
                   checking={checkingJob === job.id}
                   preferredRoles={preferredRoles}
                   showMatchingTags
+                  applicationDetails={applicationsMap[String(job.id)]}
                 />
               </motion.div>
             ))}

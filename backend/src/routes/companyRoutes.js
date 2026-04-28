@@ -1,5 +1,5 @@
 const express = require('express');
-const { getCompanyProfile, postJob, getJobApplicants, getDashboardStats, getShortlistedCandidates } = require('../controllers/companyController');
+const { getCompanyProfile, postJob, getJobApplicants, getDashboardStats, getShortlistedCandidates, updateApplicantStatus } = require('../controllers/companyController');
 const { authenticateToken, requireRole } = require('../middlewares/auth');
 
 const router = express.Router();
@@ -14,6 +14,9 @@ router.get('/profile', getCompanyProfile);
 router.post('/jobs', postJob);
 router.get('/jobs/shortlisted', getShortlistedCandidates);
 router.get('/jobs/:jobId/applicants', getJobApplicants);
+
+// Applicant actions
+router.put('/jobs/applications/:id/status', updateApplicantStatus);
 
 // Analytics
 router.get('/dashboard', getDashboardStats);

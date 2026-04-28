@@ -49,7 +49,8 @@ interface AppContextType {
   linkedPlatforms: Record<PlatformKey, boolean>;
   setLinkedPlatforms: (p: Record<PlatformKey, boolean>) => void;
   appliedJobs: string[];
-  addAppliedJob: (id: string) => void;
+  applicationsMap: Record<string, any>;
+  addAppliedJob: (id: string, application?: any) => void;
   preferredRoles: string[];
   setPreferredRoles: (roles: string[]) => void;
 }
@@ -86,6 +87,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [linkedPlatforms, setLinkedPlatforms] =
     useState<Record<PlatformKey, boolean>>(defaultPlatforms);
   const [appliedJobs, setAppliedJobs] = useState<string[]>([]);
+  const [applicationsMap, setApplicationsMap] = useState<Record<string, any>>({});
   const [preferredRoles, setPreferredRoles] = useState<string[]>([]);
 
   // Keep userName in sync with authUser
@@ -111,7 +113,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Sync applied jobs
       if (studentProfile.applications) {
         const ids = studentProfile.applications.map((app: any) => String(app.jobId));
+        const appMap: Record<string, any> = {};
+        studentProfile.applications.forEach((app: any) => {
+          appMap[String(app.jobId)] = app;
+        });
         setAppliedJobs(ids);
+        setApplicationsMap(appMap);
       }
     }
   }, [studentProfile]);
@@ -141,12 +148,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRole(null);
     setStudentProfile(null);
     setAppliedJobs([]);
+    setApplicationsMap({});
     setPreferredRoles([]);
     setLinkedPlatforms(defaultPlatforms);
   };
 
-  const addAppliedJob = (id: string) => {
+  const addAppliedJob = (id: string, application?: any) => {
     setAppliedJobs((prev) => [...prev, id]);
+    if (application) {
+      setApplicationsMap((prev) => ({ ...prev, [id]: application }));
+    }
   };
 
   return (
@@ -167,6 +178,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         linkedPlatforms,
         setLinkedPlatforms,
         appliedJobs,
+        applicationsMap,
         addAppliedJob,
         preferredRoles,
         setPreferredRoles,

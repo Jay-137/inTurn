@@ -270,6 +270,10 @@ export function PendingJobs() {
   const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionJobId, setActionJobId] = useState<number | null>(null);
+  const [actionType, setActionType] = useState<"APPROVE" | "REJECT" | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [universityDeadline, setUniversityDeadline] = useState("");
 
   const fetchJobs = () => {
     setLoading(true);
@@ -289,7 +293,7 @@ export function PendingJobs() {
     fetchJobs();
   }, []);
 
-  const handleUpdateStatus = async (jobId: number, status: string) => {
+  const handleUpdateStatus = async (jobId: number, status: string, reason?: string, deadline?: string) => {
     try {
       const res = await fetch(`${API_BASE}/university/jobs/${jobId}/status`, {
         method: "PUT",
@@ -297,11 +301,25 @@ export function PendingJobs() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${getToken()}` 
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ 
+          status, 
+          ...(reason && { rejectionReason: reason }),
+          ...(deadline && { universityDeadline: deadline })
+        })
       });
-      if (res.ok) fetchJobs();
+      if (res.ok) {
+        setActionJobId(null);
+        setActionType(null);
+        setRejectionReason("");
+        setUniversityDeadline("");
+        fetchJobs();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to update job status");
+      }
     } catch (e) {
       console.error("Failed to update job status");
+      toast.error("An error occurred");
     }
   };
 
@@ -340,8 +358,45 @@ export function PendingJobs() {
                   <td className={tableTd}>{j.minCgpa}</td>
                   <td className={tableTd}>{new Date(j.deadline).toLocaleDateString()}</td>
                   <td className={`${tableTd} text-right space-x-2`}>
-                    <button onClick={() => handleUpdateStatus(j.id, "APPROVED")} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
-                    <button onClick={() => handleUpdateStatus(j.id, "REJECTED")} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                    {actionJobId !== j.id && (
+                      <>
+                        <button onClick={() => { setActionJobId(j.id); setActionType("APPROVE"); setUniversityDeadline(""); }} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                        <button onClick={() => { setActionJobId(j.id); setActionType("REJECT"); setRejectionReason(""); }} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                      </>
+                    )}
+                    {actionJobId === j.id && actionType === "APPROVE" && (
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="text-left w-full max-w-[200px]">
+                          <label className={`block text-[10px] mb-1 ${muted}`}>Set earlier deadline (optional)</label>
+                          <input 
+                            type="date" 
+                            value={universityDeadline}
+                            onChange={(e) => setUniversityDeadline(e.target.value)}
+                            max={new Date(j.deadline).toISOString().split('T')[0]} // Cannot be after recruiter deadline
+                            className={`w-full text-xs px-2 py-1 rounded border outline-none ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setActionJobId(null); setActionType(null); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
+                          <button onClick={() => handleUpdateStatus(j.id, "APPROVED", undefined, universityDeadline || undefined)} className={`text-xs px-2 py-1 rounded-md bg-green-600 text-white hover:bg-green-700`}>Confirm</button>
+                        </div>
+                      </div>
+                    )}
+                    {actionJobId === j.id && actionType === "REJECT" && (
+                      <div className="flex flex-col items-end gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="Reason for rejection" 
+                          value={rejectionReason}
+                          onChange={(e) => setRejectionReason(e.target.value)}
+                          className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={() => { setActionJobId(null); setActionType(null); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
+                          <button onClick={() => handleUpdateStatus(j.id, "REJECTED", rejectionReason)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
+                        </div>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1190,6 +1245,174 @@ export function CertificationsReview() {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+export function PendingApplications() {
+  const { theme } = useTheme();
+  const dk = theme === "dark";
+  const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
+  const [apps, setApps] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionAppId, setActionAppId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const fetchApps = () => {
+    setLoading(true);
+    fetch(`${API_BASE}/university/applications/pending`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setApps(Array.isArray(data) ? data : data.applications || []))
+      .catch(() => setApps([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchApps();
+  }, []);
+
+  const handleApprove = async (id: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/applications/${id}/approve`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) fetchApps();
+    } catch (e) {
+      toast.error("Failed to approve application");
+    }
+  };
+
+  const handleReject = async (id: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/applications/${id}/reject`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}` 
+        },
+        body: JSON.stringify({ reason: rejectReason })
+      });
+      if (res.ok) {
+        setActionAppId(null);
+        setRejectReason("");
+        fetchApps();
+      }
+    } catch (e) {
+      toast.error("Failed to reject application");
+    }
+  };
+
+  const handleMassForward = async (jobId: number, jobTitle: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/applications/mass-forward/${jobId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(`Forwarded ${data.count} applications for ${jobTitle}`);
+        fetchApps();
+      }
+    } catch (e) {
+      toast.error("Failed to mass-forward applications");
+    }
+  };
+
+  // Group apps by job for mass-forward functionality
+  const appsByJob = apps.reduce((acc: any, app: any) => {
+    const jobId = app.job?.id;
+    if (!acc[jobId]) acc[jobId] = { job: app.job, apps: [] };
+    acc[jobId].apps.push(app);
+    return acc;
+  }, {});
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className={`text-2xl tracking-tight ${heading}`}>Pending Applications</h1>
+        <p className={`text-sm mt-1 ${muted}`}>Review student applications before forwarding them to recruiters.</p>
+      </div>
+
+      {loading ? (
+        <div className={card}>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className={`ml-2 text-sm ${muted}`}>Loading pending applications…</span>
+          </div>
+        </div>
+      ) : Object.keys(appsByJob).length === 0 ? (
+        <div className={card}>
+          <div className="text-center py-12">
+            <ClipboardList className={`w-8 h-8 mx-auto mb-3 ${muted}`} />
+            <p className={muted}>No pending applications at this time.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.values(appsByJob).map((group: any) => (
+            <div key={group.job.id} className={card}>
+              <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100 dark:border-white/5">
+                <div>
+                  <h3 className={`text-lg font-medium ${heading}`}>{group.job.title}</h3>
+                  <p className={`text-xs ${muted}`}>{group.job.company?.name || "Company"} • {group.apps.length} pending</p>
+                </div>
+                <button 
+                  onClick={() => handleMassForward(group.job.id, group.job.title)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  Forward All to Recruiter
+                </button>
+              </div>
+
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className={tableTh}>Student</th>
+                    <th className={tableTh}>Branch</th>
+                    <th className={tableTh}>Match Score</th>
+                    <th className={`${tableTh} text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.apps.map((a: any) => (
+                    <tr key={a.id}>
+                      <td className={tableTd}>{a.student?.user?.name || "—"}</td>
+                      <td className={tableTd}>{a.student?.academicUnit?.name || "—"}</td>
+                      <td className={tableTd}>{Math.round(a.matchScore || 0)}%</td>
+                      <td className={`${tableTd} text-right space-x-2`}>
+                        {actionAppId !== a.id && (
+                          <>
+                            <button onClick={() => handleApprove(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                            <button onClick={() => setActionAppId(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                          </>
+                        )}
+                        {actionAppId === a.id && (
+                          <div className="flex flex-col items-end gap-2">
+                            <input 
+                              type="text" 
+                              placeholder="Reason for rejection" 
+                              value={rejectReason}
+                              onChange={(e) => setRejectReason(e.target.value)}
+                              className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                            />
+                            <div className="flex gap-2">
+                              <button onClick={() => { setActionAppId(null); setRejectReason(""); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
+                              <button onClick={() => handleReject(a.id)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

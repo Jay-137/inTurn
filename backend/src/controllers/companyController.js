@@ -102,24 +102,31 @@ const postJob = async (req, res) => {
     }
 };
 
-// View applicants for a specific job, sorted by Match Score
+// View applicants for a specific job — only those forwarded by university
 const getJobApplicants = async (req, res) => {
     try {
         const jobId = parseInt(req.params.jobId);
 
         const applications = await prisma.application.findMany({
-            where: { jobId },
+            where: {
+                jobId,
+                status: { notIn: ['PENDING_REVIEW', 'REJECTED_BY_UNIVERSITY'] }
+            },
             include: {
                 student: {
                     include: {
                         user: { select: { name: true, email: true } },
+                        academicUnit: { select: { name: true, type: true } },
                         externalProfiles: true,
-                        skills: { include: { skill: true } }, softSkills: true, certifications: true, experiences: true
+                        skills: { include: { skill: true } },
+                        softSkills: true,
+                        certifications: true,
+                        experiences: true
                     }
                 }
             },
             orderBy: {
-                matchScore: 'desc' // Sort highest match score first
+                matchScore: 'desc'
             }
         });
 
@@ -152,20 +159,23 @@ const getDashboardStats = async (req, res) => {
         // All Jobs by this company
         const companyJobs = await prisma.job.findMany({
             where: { companyId },
-            select: { id: true, title: true, deadline: true }
+            select: { id: true, title: true, deadline: true, approvalStatus: true, rejectionReason: true }
         });
         const jobIds = companyJobs.map(j => j.id);
 
-        // All Applications to these jobs
+        // All Applications to these jobs (only forwarded ones visible to recruiter)
         const applications = await prisma.application.findMany({
-            where: { jobId: { in: jobIds } },
+            where: {
+                jobId: { in: jobIds },
+                status: { notIn: ['PENDING_REVIEW', 'REJECTED_BY_UNIVERSITY'] }
+            },
             include: { student: { include: { user: true, softSkills: true, certifications: true, experiences: true, skills: { include: { skill: true } } } }, job: { select: { title: true } } }
         });
 
         const totalApplicants = applications.length;
-        const shortlistedCount = applications.filter(a => a.matchScore !== null && a.matchScore >= 75).length;
-        const pendingCount = applications.filter(a => a.status === 'APPLIED').length;
-        const rejectedCount = applications.filter(a => a.status === 'REJECTED_ELIGIBILITY').length;
+        const shortlistedCount = applications.filter(a => a.status === 'SHORTLISTED_BY_RECRUITER').length;
+        const pendingCount = applications.filter(a => a.status === 'FORWARDED_TO_RECRUITER').length;
+        const rejectedCount = applications.filter(a => a.status === 'REJECTED_BY_RECRUITER').length;
 
         // Calculate Average Match Score
         const appsWithScore = applications.filter(a => a.matchScore !== null);
@@ -191,19 +201,27 @@ const getDashboardStats = async (req, res) => {
             weeklyTrend.push({ label: dayName, apps: appsOnDay.length, date: dateString });
         }
 
-        // Active Jobs Detailed
+        // Jobs Detailed (shows all jobs, including pending/rejected ones)
         const activeJobsDetailed = companyJobs
-            .filter(j => new Date(j.deadline) > new Date())
             .map(job => {
                 const jobApps = applications.filter(a => a.jobId === job.id);
+                // Status derivation
+                let displayStatus = job.approvalStatus;
+                if (displayStatus === 'APPROVED' && new Date(job.deadline) < new Date()) {
+                    displayStatus = 'EXPIRED';
+                }
+
                 return {
+                    id: job.id,
                     title: job.title,
                     posted: `Deadline: ${new Date(job.deadline).toLocaleDateString()}`,
-                    status: "Active",
+                    status: displayStatus,
+                    approvalStatus: job.approvalStatus,
+                    rejectionReason: job.rejectionReason,
                     applicants: jobApps.length,
-                    shortlisted: jobApps.filter(a => a.matchScore !== null && a.matchScore >= 75).length,
-                    pending: jobApps.filter(a => a.status === 'APPLIED').length,
-                    rejected: jobApps.filter(a => a.status === 'REJECTED_ELIGIBILITY').length
+                    shortlisted: jobApps.filter(a => a.status === 'SHORTLISTED_BY_RECRUITER').length,
+                    pending: jobApps.filter(a => a.status === 'FORWARDED_TO_RECRUITER').length,
+                    rejected: jobApps.filter(a => a.status === 'REJECTED_BY_RECRUITER').length
                 };
             });
 
@@ -266,22 +284,27 @@ const getShortlistedCandidates = async (req, res) => {
         const applications = await prisma.application.findMany({
             where: { 
                 jobId: { in: jobIds },
-                matchScore: { gte: 75 } // Shortlisted threshold
+                status: 'SHORTLISTED_BY_RECRUITER'
             },
             include: {
-                student: { include: { user: true, softSkills: true, certifications: true, experiences: true, skills: { include: { skill: true } } } },
+                student: { include: { user: true, academicUnit: { select: { name: true } }, softSkills: true, certifications: true, experiences: true, skills: { include: { skill: true } } } },
                 job: true
             },
             orderBy: { matchScore: 'desc' }
         });
 
         const candidates = applications.map(a => ({
+            id: a.id,
             name: a.student.user.name,
+            email: a.student.user.email,
             role: a.job.title,
-            branch: a.student.branch || "N/A",
-            score: Math.round(a.matchScore),
-            status: a.status === 'APPLIED' ? 'Shortlisted' : a.status,
-            videoResumeUrl: a.student.videoResumeUrl
+            jobId: a.job.id,
+            branch: a.student.academicUnit?.name || a.student.branch || "N/A",
+            score: Math.round(a.matchScore || 0),
+            status: 'Shortlisted',
+            resumeUrl: a.student.resumeUrl,
+            videoResumeUrl: a.student.videoResumeUrl,
+            skills: a.student.skills.map(s => ({ name: s.skill.name, score: s.score }))
         }));
 
         res.json({ candidates });
@@ -291,10 +314,55 @@ const getShortlistedCandidates = async (req, res) => {
     }
 };
 
+// Recruiter action: Shortlist or Reject an applicant
+const updateApplicantStatus = async (req, res) => {
+    try {
+        const applicationId = parseInt(req.params.id);
+        const { status } = req.body; // 'SHORTLISTED_BY_RECRUITER' or 'REJECTED_BY_RECRUITER'
+
+        const validStatuses = ['SHORTLISTED_BY_RECRUITER', 'REJECTED_BY_RECRUITER'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+        }
+
+        // Verify this application belongs to a job owned by this recruiter
+        const userId = req.user.id;
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            include: { company: true }
+        });
+        if (!user || !user.company) {
+            return res.status(403).json({ error: "Only registered company recruiters can perform this action" });
+        }
+
+        const application = await prisma.application.findUnique({
+            where: { id: applicationId },
+            include: { job: true }
+        });
+        if (!application) {
+            return res.status(404).json({ error: "Application not found" });
+        }
+        if (application.job.companyId !== user.company.id) {
+            return res.status(403).json({ error: "This application does not belong to your company" });
+        }
+
+        const updated = await prisma.application.update({
+            where: { id: applicationId },
+            data: { status }
+        });
+
+        res.json({ message: `Application ${status === 'SHORTLISTED_BY_RECRUITER' ? 'shortlisted' : 'rejected'}`, application: updated });
+    } catch (error) {
+        console.error("Update applicant status error:", error);
+        res.status(500).json({ error: "Failed to update applicant status" });
+    }
+};
+
 module.exports = {
     getCompanyProfile,
     postJob,
     getJobApplicants,
     getDashboardStats,
-    getShortlistedCandidates
+    getShortlistedCandidates,
+    updateApplicantStatus
 };

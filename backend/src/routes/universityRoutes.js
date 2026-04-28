@@ -172,5 +172,34 @@ router.put(
     universityController.verifyCertification
 );
 
+// --- Application Review (University-mediated flow) ---
+router.get(
+    '/applications/pending',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getPendingApplications
+);
+
+router.put(
+    '/applications/:id/approve',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.approveApplication
+);
+
+router.put(
+    '/applications/:id/reject',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.rejectApplication
+);
+
+router.post(
+    '/applications/mass-forward/:jobId',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.massForwardApplications
+);
+
 
 module.exports = router;

@@ -4,7 +4,14 @@ const { evaluateEligibility } = require('../services/engine/eligibilityEngine');
 // [ALL ROLES] View open jobs. If requested by a student, append eligibility info.
 const getJobs = async (req, res) => {
     try {
+        // Students only see approved jobs
+        const whereClause = {};
+        if (req.user && req.user.role === 'STUDENT') {
+            whereClause.approvalStatus = 'APPROVED';
+        }
+
         const jobs = await prisma.job.findMany({
+            where: whereClause,
             include: { company: true },
             orderBy: { deadline: 'asc' }
         });
@@ -27,6 +34,8 @@ const getJobs = async (req, res) => {
                     const eligibility = await evaluateEligibility(student, job, uniFilter);
                     enhancedJobs.push({
                         ...job,
+                        // Show university deadline to students if set (earlier cutoff)
+                        deadline: job.universityDeadline || job.deadline,
                         eligibilityStatus: eligibility.isEligible,
                         matchScore: eligibility.matchScore,
                         feedback: eligibility.feedback
@@ -60,8 +69,10 @@ const applyForJob = async (req, res) => {
         const job = await prisma.job.findUnique({ where: { id: jobId } });
         if (!job) return res.status(404).json({ error: 'Job not found.' });
 
-        if (new Date() > job.deadline) {
-            return res.status(400).json({ error: 'Deadline passed.' });
+        // Check university deadline first, then recruiter deadline
+        const effectiveDeadline = job.universityDeadline || job.deadline;
+        if (new Date() > effectiveDeadline) {
+            return res.status(400).json({ error: 'Application deadline has passed.' });
         }
 
         if (student.placementStatus === 'PLACED') {
@@ -89,13 +100,13 @@ const applyForJob = async (req, res) => {
             });
         }
 
-        // Save application
+        // Save application with PENDING_REVIEW status (held at university level)
         const application = await prisma.application.create({
             data: {
                 jobId,
                 studentId: student.id,
                 matchScore: eligibility.matchScore, 
-                status: 'APPLIED'
+                status: 'PENDING_REVIEW'
             }
         });
 

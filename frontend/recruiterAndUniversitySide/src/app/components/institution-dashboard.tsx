@@ -12,7 +12,7 @@ import { EligibleStudents } from "./eligible-students";
 import type { EligibleFilters } from "./eligible-students";
 import { PlacementBranches } from "./placement-branches";
 import type { HierNode } from "./placement-branches";
-import { AllStudents, AllJobs, PendingJobs, AllApplications, RecruitersPage, SimplePlaceholder, DataRequestsPage, SettingsPage, StudentAnalytics, RecruiterAnalytics, AcademicUnitsPage, CertificationsReview } from "./institution-subpages";
+import { AllStudents, AllJobs, PendingJobs, AllApplications, PendingApplications, RecruitersPage, SimplePlaceholder, DataRequestsPage, SettingsPage, StudentAnalytics, RecruiterAnalytics, AcademicUnitsPage, CertificationsReview } from "./institution-subpages";
 
 /* ─── Sidebar Nav Config ─── */
 type NavItem = {
@@ -45,6 +45,7 @@ const sidebarNav: NavItem[] = [
     label: "Applications", icon: ClipboardList, id: "applications",
     children: [
       { label: "All Applications", id: "applications-all" },
+      { label: "Pending Applications", id: "applications-pending" },
     ],
   },
   {
@@ -309,6 +310,8 @@ export function InstitutionDashboard() {
           <PendingJobs />
         ) : activeNav === "applications-all" ? (
           <AllApplications />
+        ) : activeNav === "applications-pending" ? (
+          <PendingApplications />
         ) : activeNav === "analytics-students" ? (
           <StudentAnalytics />
         ) : activeNav === "analytics-recruiters" ? (
