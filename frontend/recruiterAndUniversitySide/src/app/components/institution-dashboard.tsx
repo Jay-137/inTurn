@@ -12,7 +12,7 @@ import { EligibleStudents } from "./eligible-students";
 import type { EligibleFilters } from "./eligible-students";
 import { PlacementBranches } from "./placement-branches";
 import type { HierNode } from "./placement-branches";
-import { AllStudents, AllJobs, PendingJobs, AllApplications, RecruitersPage, SimplePlaceholder, DataRequestsPage } from "./institution-subpages";
+import { AllStudents, AllJobs, PendingJobs, AllApplications, RecruitersPage, SimplePlaceholder, DataRequestsPage, SettingsPage, StudentAnalytics, RecruiterAnalytics, AcademicUnitsPage, CertificationsReview } from "./institution-subpages";
 
 /* ─── Sidebar Nav Config ─── */
 type NavItem = {
@@ -29,6 +29,7 @@ const sidebarNav: NavItem[] = [
     children: [
       { label: "All Branches", id: "students-all" },
       { label: "Placement Branches", id: "students-placement" },
+      { label: "Academic Units", id: "students-academic-units" },
       { label: "Eligible Students", id: "students-eligible" },
       { label: "Data Requests", id: "students-data-requests" },
     ],
@@ -53,6 +54,7 @@ const sidebarNav: NavItem[] = [
       { label: "Recruiter Analytics", id: "analytics-recruiters" },
     ],
   },
+  { label: "Certifications", icon: Award, id: "certifications" },
   { label: "Recruiters", icon: Building2, id: "recruiters" },
   { label: "Settings", icon: Settings, id: "settings" },
 ];
@@ -205,7 +207,15 @@ export function InstitutionDashboard() {
   const [dashboardData, setDashboardData] = useState<any>({
     totalApplicants: 0,
     shortlistRate: 0,
-    offersExtended: 0
+    offersExtended: 0,
+    activeJobCount: 0,
+    pendingRegistrations: 0,
+    pendingJobApprovals: 0,
+    placementByBranch: [],
+    topStudents: [],
+    avgSkillScore: 0,
+    avgSkillScoreCount: 0,
+    recentActivity: []
   });
 
   useEffect(() => {
@@ -289,6 +299,8 @@ export function InstitutionDashboard() {
           />
         ) : activeNav === "students-all" ? (
           <AllStudents />
+        ) : activeNav === "students-academic-units" ? (
+          <AcademicUnitsPage />
         ) : activeNav === "students-data-requests" ? (
           <DataRequestsPage />
         ) : activeNav === "jobs-all" ? (
@@ -298,13 +310,15 @@ export function InstitutionDashboard() {
         ) : activeNav === "applications-all" ? (
           <AllApplications />
         ) : activeNav === "analytics-students" ? (
-          <SimplePlaceholder title="Student Analytics" desc="Detailed placement graphs and metrics." />
+          <StudentAnalytics />
         ) : activeNav === "analytics-recruiters" ? (
-          <SimplePlaceholder title="Recruiter Analytics" desc="Recruiter engagement and hiring statistics." />
+          <RecruiterAnalytics />
+        ) : activeNav === "certifications" ? (
+          <CertificationsReview />
         ) : activeNav === "recruiters" ? (
           <RecruitersPage />
         ) : activeNav === "settings" ? (
-          <SimplePlaceholder title="Settings" desc="Manage institution profile and configuration." />
+          <SettingsPage />
         ) : (
         <main className="flex-1 px-6 py-8 space-y-6 overflow-y-auto">
           {/* Greeting */}
@@ -351,7 +365,7 @@ export function InstitutionDashboard() {
                   <Briefcase className={`w-4 h-4 ${dk ? colorMap.amber.textDk : colorMap.amber.text}`} />
                 </div>
               </div>
-              <p className={`text-2xl tracking-tight ${heading}`}>--</p>
+              <p className={`text-2xl tracking-tight ${heading}`}>{dashboardData.activeJobCount}</p>
               <p className={`text-xs mt-1 ${muted}`}>Active Job Postings</p>
             </div>
           </div>
@@ -360,17 +374,53 @@ export function InstitutionDashboard() {
           <div className="grid lg:grid-cols-5 gap-6">
             <div className={`lg:col-span-3 ${card} p-6`}>
               <h2 className={`text-sm mb-4 ${heading}`}>Recent Activity</h2>
-              <div className="space-y-0">
-                <div className="flex items-center gap-3 py-3">
-                    <p className={`text-sm ${muted}`}>Dynamic feed not implemented for prototype.</p>
+              {dashboardData.recentActivity?.length > 0 ? (
+                <div className="space-y-0">
+                  {dashboardData.recentActivity.map((item: any) => (
+                    <div key={item.id} className={`flex items-center justify-between gap-3 py-3 border-b last:border-0 ${dk ? "border-white/5" : "border-gray-100"}`}>
+                      <div>
+                        <p className={`text-sm ${heading}`}>{item.title}</p>
+                        <p className={`text-xs mt-0.5 ${muted}`}>{item.detail}</p>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${dk ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>
+                        {item.type?.replaceAll("_", " ") || "ACTIVITY"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              </div>
+              ) : (
+                <p className={`text-sm ${muted}`}>No recent activity yet.</p>
+              )}
             </div>
 
             <div className={`lg:col-span-2 ${card} p-6`}>
               <h2 className={`text-sm mb-4 ${heading}`}>Needs Attention</h2>
               <div className="space-y-3">
-                <p className={`text-sm ${muted}`}>No items currently need attention.</p>
+                {dashboardData.pendingRegistrations > 0 && (
+                  <div className={`p-3 rounded-lg flex items-center justify-between ${dk ? "bg-amber-500/10" : "bg-amber-50"}`}>
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className={`w-4 h-4 ${dk ? "text-amber-400" : "text-amber-600"}`} />
+                      <span className={`text-sm ${dk ? "text-amber-400" : "text-amber-700"}`}>
+                        {dashboardData.pendingRegistrations} Pending Student Registrations
+                      </span>
+                    </div>
+                    <button onClick={() => setActiveNav("students-all")} className={`text-xs font-medium ${dk ? "text-amber-400" : "text-amber-700"}`}>Review</button>
+                  </div>
+                )}
+                {dashboardData.pendingJobApprovals > 0 && (
+                  <div className={`p-3 rounded-lg flex items-center justify-between ${dk ? "bg-amber-500/10" : "bg-amber-50"}`}>
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className={`w-4 h-4 ${dk ? "text-amber-400" : "text-amber-600"}`} />
+                      <span className={`text-sm ${dk ? "text-amber-400" : "text-amber-700"}`}>
+                        {dashboardData.pendingJobApprovals} Pending Job Approvals
+                      </span>
+                    </div>
+                    <button onClick={() => setActiveNav("jobs-pending")} className={`text-xs font-medium ${dk ? "text-amber-400" : "text-amber-700"}`}>Review</button>
+                  </div>
+                )}
+                {dashboardData.pendingRegistrations === 0 && dashboardData.pendingJobApprovals === 0 && (
+                  <p className={`text-sm ${muted}`}>No items currently need attention.</p>
+                )}
               </div>
             </div>
           </div>
@@ -393,9 +443,24 @@ export function InstitutionDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td colSpan={5} className={`py-3 text-center ${muted}`}>Dynamic active jobs to be mapped.</td>
-                  </tr>
+                  {dashboardData.activeJobsList?.length > 0 ? dashboardData.activeJobsList.map((job: any) => {
+                    const daysLeft = job.deadline ? Math.ceil((new Date(job.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+                    return (
+                      <tr key={job.id} className={`border-b last:border-0 ${dk ? "border-white/5" : "border-gray-100"}`}>
+                        <td className={`py-3 font-medium ${heading}`}>{job.company?.name || "Company"}</td>
+                        <td className="py-3">{job.title}</td>
+                        <td className="py-3">{job._count?.applications || 0}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] uppercase ${dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600"}`}>Active</span>
+                        </td>
+                        <td className={`py-3 text-right ${daysLeft < 3 ? (dk ? "text-amber-400" : "text-amber-600") : ""}`}>{daysLeft > 0 ? `${daysLeft} days` : "Ending soon"}</td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan={5} className={`py-3 text-center ${muted}`}>No active jobs found.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -410,28 +475,24 @@ export function InstitutionDashboard() {
               </div>
               <div className="flex items-end gap-6 mb-5">
                 <div>
-                  <p className={`text-4xl tracking-tight ${heading}`}>57<span className="text-lg">%</span></p>
+                  <p className={`text-4xl tracking-tight ${heading}`}>{dashboardData.placementRate || 0}<span className="text-lg">%</span></p>
                   <p className={`text-xs mt-1 ${muted}`}>Students placed</p>
                 </div>
                 <div>
-                  <p className={`text-lg tracking-tight ${heading}`}>1,623</p>
-                  <p className={`text-xs mt-1 ${muted}`}>of 2,847 total</p>
+                  <p className={`text-lg tracking-tight ${heading}`}>{dashboardData.placedStudents || 0}</p>
+                  <p className={`text-xs mt-1 ${muted}`}>of {dashboardData.totalApplicants || 0} total</p>
                 </div>
               </div>
               <div className={`w-full h-3 rounded-full overflow-hidden ${dk ? "bg-white/5" : "bg-gray-100"}`}>
-                <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all" style={{ width: "57%" }} />
+                <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all" style={{ width: `${dashboardData.placementRate || 0}%` }} />
               </div>
               <div className="flex justify-between mt-2">
                 <span className={`text-xs ${muted}`}>0%</span>
-                <span className={`text-xs ${muted}`}>Target: 75%</span>
+                <span className={`text-xs ${muted}`}>Current</span>
                 <span className={`text-xs ${muted}`}>100%</span>
               </div>
               <div className={`mt-5 pt-5 border-t grid grid-cols-3 gap-4 ${dk ? "border-white/5" : "border-gray-100"}`}>
-                {[
-                  { label: "CSE", pct: 72 },
-                  { label: "IT", pct: 61 },
-                  { label: "ECE", pct: 43 },
-                ].map((d) => (
+                {dashboardData.placementByBranch.map((d: any) => (
                   <div key={d.label}>
                     <div className="flex justify-between text-xs mb-1">
                       <span className={dk ? "text-gray-300" : "text-gray-700"}>{d.label}</span>
@@ -452,16 +513,30 @@ export function InstitutionDashboard() {
               </div>
               <div className="flex items-end gap-6 mb-6">
                 <div>
-                  <p className={`text-4xl tracking-tight ${heading}`}>78</p>
+                  <p className={`text-4xl tracking-tight ${heading}`}>{dashboardData.avgSkillScore || 0}</p>
                   <p className={`text-xs mt-1 ${muted}`}>Avg. skill score</p>
                 </div>
                 <div>
-                  <span className="text-xs text-green-500">+4 vs last semester</span>
+                  <span className={`text-xs ${muted}`}>
+                    Based on {dashboardData.avgSkillScoreCount || 0} verified skill records
+                  </span>
                 </div>
               </div>
               <h3 className={`text-xs mb-3 ${muted}`}>Top Performers</h3>
-              <div className="space-y-2">
-                <p className={`text-sm ${muted}`}>To be connected with automated score calculations.</p>
+              <div className="space-y-4">
+                {dashboardData.topStudents.length > 0 ? dashboardData.topStudents.map((s: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between">
+                    <div>
+                      <p className={`text-sm font-medium ${heading}`}>{s.name}</p>
+                      <p className={`text-xs ${muted}`}>{s.branch}</p>
+                    </div>
+                    <span className={`text-sm font-bold ${dk ? "text-blue-400" : "text-blue-600"}`}>
+                      {Number(s.cgpa || 0).toFixed(1)}
+                    </span>
+                  </div>
+                )) : (
+                  <p className={`text-sm ${muted}`}>No top performers yet.</p>
+                )}
               </div>
             </div>
           </div>

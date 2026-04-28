@@ -11,6 +11,8 @@ import {
   Cpu,
   Shield,
   FileText,
+  X,
+  UserRound,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState, useEffect } from "react";
@@ -21,6 +23,7 @@ const studentNav = [
   { label: "Placement Drives", path: "/student/placements", icon: Briefcase },
   { label: "Skill Proof", path: "/student/link", icon: Shield },
   { label: "Skill Profile", path: "/student/profile", icon: BarChart3 },
+  { label: "Manage Profile", path: "/student/manage-profile", icon: UserRound },
   { label: "Extra Data", path: "/student/data", icon: FileText },
 ];
 
@@ -56,6 +59,26 @@ export function Layout() {
       studentApi.getNotifications().then(setNotifications).catch(console.error);
     }
   }, [isAuthenticated]);
+
+
+  const handleDelete = async (id: number) => {
+    try {
+      await studentApi.deleteNotification(id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleClearAll = async () => {
+    try {
+      await studentApi.clearAllNotifications();
+      setNotifications([]);
+      setShowNotif(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const markRead = async (id: number) => {
     try {
@@ -170,13 +193,13 @@ export function Layout() {
                   animate={{ opacity: 1, y: 0 }}
                   className="absolute right-0 top-12 w-72 max-h-[400px] overflow-y-auto bg-white rounded-xl shadow-xl border border-border p-4 z-50"
                 >
-                  <p className="text-sm text-gray-700 mb-2 font-medium">Notifications</p>
+                  <div className="flex items-center justify-between mb-2"><p className="text-sm text-gray-700 font-medium">Notifications</p>{notifications.length > 0 && <button onClick={handleClearAll} className="text-xs text-indigo-600 hover:text-indigo-800 cursor-pointer">Clear all</button>}</div>
                   <div className="space-y-2">
                     {notifications.length > 0 ? notifications.map(n => (
                       <div 
                         key={n.id} 
                         onClick={() => !n.isRead && markRead(n.id)}
-                        className={`p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                        className={`relative group p-2 pr-6 rounded-lg text-xs cursor-pointer transition-colors ${
                           n.isRead 
                             ? "bg-gray-50 text-gray-500" 
                             : n.type === "success" 
@@ -186,7 +209,7 @@ export function Layout() {
                                 : "bg-indigo-50 text-indigo-700 font-medium"
                         }`}
                       >
-                        {n.message}
+                        {n.message}<button onClick={(e) => { e.stopPropagation(); handleDelete(n.id); }} className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 cursor-pointer"><X className="w-3 h-3" /></button>
                       </div>
                     )) : (
                       <div className="text-xs text-gray-400 text-center py-4">No notifications</div>

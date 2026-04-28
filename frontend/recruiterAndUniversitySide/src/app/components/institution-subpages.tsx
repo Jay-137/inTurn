@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "./theme-context";
-import { Building2, Briefcase, GraduationCap, ClipboardList, CheckCircle, XCircle, Search, Filter, Loader2 } from "lucide-react";
+import { Building2, Briefcase, GraduationCap, ClipboardList, CheckCircle, XCircle, Search, Filter, Loader2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 const API_BASE = "http://localhost:3000/api";
 
@@ -16,14 +17,37 @@ function getToken() {
   return localStorage.getItem("token") || "";
 }
 
+function flattenUnitTree(nodes: any[], path: string[] = []): any[] {
+  return nodes.flatMap((node) => {
+    const nextPath = [...path, node.label];
+    const children = Array.isArray(node.children) ? flattenUnitTree(node.children, nextPath) : [];
+    return [
+      {
+        id: Number(node.id),
+        label: node.label,
+        type: node.type,
+        parentId: node.parentId,
+        level: node.level,
+        path: nextPath.join(" > "),
+        hasChildren: children.length > 0,
+      },
+      ...children,
+    ];
+  });
+}
+
 export function AllStudents() {
   const { theme } = useTheme();
   const dk = theme === "dark";
   const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("ALL");
+  const [rejectingStudentId, setRejectingStudentId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
-  useEffect(() => {
+  const fetchStudents = () => {
+    setLoading(true);
     fetch(`${API_BASE}/university/students`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
@@ -31,7 +55,47 @@ export function AllStudents() {
       .then((data) => setStudents(Array.isArray(data) ? data : data.students || []))
       .catch(() => setStudents([]))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchStudents();
   }, []);
+
+  const handleApprove = async (id: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/students/${id}/approve`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) fetchStudents();
+    } catch (e) {
+      console.error("Failed to approve");
+    }
+  };
+
+  const handleReject = async (id: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/students/${id}/reject`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}` 
+        },
+        body: JSON.stringify({ reason: rejectReason })
+      });
+      if (res.ok) {
+        setRejectingStudentId(null);
+        setRejectReason("");
+        fetchStudents();
+      }
+    } catch (e) {
+      console.error("Failed to reject");
+    }
+  };
+
+  const filteredStudents = filter === "ALL" 
+    ? students 
+    : students.filter((s: any) => s.registrationStatus === filter);
 
   return (
     <div className="p-6 space-y-6">
@@ -49,6 +113,23 @@ export function AllStudents() {
             <Filter className="w-4 h-4" /> Filters
           </button>
         </div>
+        
+        {/* Status Filters */}
+        <div className="flex gap-2 mb-6">
+          {["ALL", "PENDING", "APPROVED", "REJECTED"].map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilter(status)}
+              className={`px-3 py-1.5 rounded-full text-xs transition-colors ${
+                filter === status 
+                  ? "bg-blue-600 text-white" 
+                  : dk ? "bg-white/5 text-gray-400 hover:text-gray-200" : "bg-gray-100 text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              {status}
+            </button>
+          ))}
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -62,20 +143,52 @@ export function AllStudents() {
               <th className={tableTh}>Branch</th>
               <th className={tableTh}>CGPA</th>
               <th className={tableTh}>Status</th>
+              <th className={`${tableTh} text-right`}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {students.length === 0 ? (
-              <tr><td colSpan={4} className={`py-6 text-center ${muted}`}>No students found.</td></tr>
-            ) : students.map((s: any, i: number) => (
+            {filteredStudents.length === 0 ? (
+              <tr><td colSpan={5} className={`py-6 text-center ${muted}`}>No students found.</td></tr>
+            ) : filteredStudents.map((s: any, i: number) => (
               <tr key={i}>
                 <td className={tableTd}>{s.user?.name || "—"}</td>
-                <td className={tableTd}>{s.branch || s.academicUnit?.name || "—"}</td>
+                <td className={tableTd}>
+                  <div>{s.placementBranch || s.branch || s.academicUnit?.name || "—"}</div>
+                  {Array.isArray(s.academicPath) && s.academicPath.length > 0 && (
+                    <p className={`text-[10px] mt-0.5 ${muted}`}>{s.academicPath.join(" > ")}</p>
+                  )}
+                </td>
                 <td className={tableTd}>{s.cgpa}</td>
                 <td className={tableTd}>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.registrationStatus === "APPROVED" ? (dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600") : (dk ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600")}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.registrationStatus === "APPROVED" ? (dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600") : s.registrationStatus === "REJECTED" ? (dk ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-600") : (dk ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600")}`}>
                     {s.registrationStatus}
                   </span>
+                  {s.registrationStatus === "REJECTED" && s.rejectionReason && (
+                    <p className={`text-[10px] mt-1 ${muted}`}>Reason: {s.rejectionReason}</p>
+                  )}
+                </td>
+                <td className={`${tableTd} text-right space-x-2`}>
+                  {s.registrationStatus === "PENDING" && rejectingStudentId !== s.id && (
+                    <>
+                      <button onClick={() => handleApprove(s.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                      <button onClick={() => setRejectingStudentId(s.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                    </>
+                  )}
+                  {rejectingStudentId === s.id && (
+                    <div className="flex flex-col items-end gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Reason for rejection" 
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        className={`text-xs px-2 py-1 rounded border outline-none ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => setRejectingStudentId(null)} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
+                        <button onClick={() => handleReject(s.id)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
+                      </div>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -137,8 +250,8 @@ export function AllJobs() {
                 <td className={tableTd}>{Array.isArray(j.targetBranches) ? j.targetBranches.join(", ") : "All"}</td>
                 <td className={tableTd}>{j.minCgpa}</td>
                 <td className={tableTd}>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${new Date(j.deadline) > new Date() ? (dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600") : (dk ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600")}`}>
-                    {new Date(j.deadline) > new Date() ? "Active" : "Expired"}
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${j.approvalStatus === "APPROVED" ? (dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600") : j.approvalStatus === "REJECTED" ? (dk ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-600") : (dk ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600")}`}>
+                    {j.approvalStatus || "UNKNOWN"}
                   </span>
                 </td>
               </tr>
@@ -154,17 +267,87 @@ export function AllJobs() {
 export function PendingJobs() {
   const { theme } = useTheme();
   const dk = theme === "dark";
-  const { card, heading, muted } = getStyles(dk);
+  const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // For a prototype, pending jobs would be a filtered subset — we show a placeholder message
+  const fetchJobs = () => {
+    setLoading(true);
+    fetch(`${API_BASE}/university/jobs/pending`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        const pendingJobs = Array.isArray(data) ? data : data.jobs || [];
+        setJobs(pendingJobs);
+      })
+      .catch(() => setJobs([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const handleUpdateStatus = async (jobId: number, status: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/jobs/${jobId}/status`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}` 
+        },
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) fetchJobs();
+    } catch (e) {
+      console.error("Failed to update job status");
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className={`text-2xl tracking-tight ${heading}`}>Pending Approvals</h1>
         <p className={`text-sm mt-1 ${muted}`}>Review and approve job postings from recruiters.</p>
       </div>
-      <div className={`${card} text-center py-12`}>
-        <p className={muted}>No pending job approvals at this time.</p>
+      <div className={card}>
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className={`ml-2 text-sm ${muted}`}>Loading pending jobs…</span>
+          </div>
+        ) : jobs.length === 0 ? (
+          <div className="text-center py-12">
+            <p className={muted}>No pending job approvals at this time.</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className={tableTh}>Company</th>
+                <th className={tableTh}>Title</th>
+                <th className={tableTh}>Min CGPA</th>
+                <th className={tableTh}>Deadline</th>
+                <th className={`${tableTh} text-right`}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((j: any, i: number) => (
+                <tr key={i}>
+                  <td className={tableTd}>{j.company?.name || "—"}</td>
+                  <td className={tableTd}>{j.title}</td>
+                  <td className={tableTd}>{j.minCgpa}</td>
+                  <td className={tableTd}>{new Date(j.deadline).toLocaleDateString()}</td>
+                  <td className={`${tableTd} text-right space-x-2`}>
+                    <button onClick={() => handleUpdateStatus(j.id, "APPROVED")} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                    <button onClick={() => handleUpdateStatus(j.id, "REJECTED")} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
@@ -178,35 +361,19 @@ export function AllApplications() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch all applications across all jobs. 
-    // For the prototype we use a simple endpoint or combine data.
-    fetch(`${API_BASE}/jobs`, {
+    fetch(`${API_BASE}/university/applications`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
       .then((r) => (r.ok ? r.json() : []))
-      .then(async (data) => {
-        const jobList = Array.isArray(data) ? data : data.jobs || [];
-        // If there are jobs, fetch applicants for each
-        const allApps: any[] = [];
-        for (const job of jobList.slice(0, 10)) {
-          try {
-            const res = await fetch(`${API_BASE}/companies/jobs/${job.id}/applicants`, {
-              headers: { Authorization: `Bearer ${getToken()}` },
-            });
-            if (res.ok) {
-              const appData = await res.json();
-              (appData.applications || []).forEach((a: any) => {
-                allApps.push({
-                  student: a.student?.user?.name || "—",
-                  job: job.title,
-                  match: Math.round(a.matchScore || 0),
-                  status: a.status,
-                });
-              });
-            }
-          } catch { /* skip */ }
-        }
-        setApps(allApps);
+      .then((data) => {
+        const applications = Array.isArray(data) ? data : data.applications || [];
+        setApps(applications.map((a: any) => ({
+          id: a.id,
+          student: a.student?.user?.name || "—",
+          job: a.job?.title || "—",
+          match: Math.round(a.matchScore || 0),
+          status: a.status,
+        })));
       })
       .catch(() => setApps([]))
       .finally(() => setLoading(false));
@@ -256,18 +423,57 @@ export function AllApplications() {
 export function RecruitersPage() {
   const { theme } = useTheme();
   const dk = theme === "dark";
-  const { card, heading, muted } = getStyles(dk);
+  const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // For the prototype, we don't have a dedicated recruiters endpoint, so show a clean placeholder
+  useEffect(() => {
+    fetch(`${API_BASE}/university/companies`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setCompanies(Array.isArray(data) ? data : data.companies || []))
+      .catch(() => setCompanies([]))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className={`text-2xl tracking-tight ${heading}`}>Recruiters & Companies</h1>
         <p className={`text-sm mt-1 ${muted}`}>Manage companies partnered with your institution.</p>
       </div>
-      <div className={`${card} text-center py-12`}>
-        <Building2 className={`w-8 h-8 mx-auto mb-3 ${muted}`} />
-        <p className={muted}>Recruiter data will be populated from the database when companies register.</p>
+      <div className={card}>
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className={`ml-2 text-sm ${muted}`}>Loading companies…</span>
+          </div>
+        ) : companies.length === 0 ? (
+          <div className="text-center py-12">
+            <Building2 className={`w-8 h-8 mx-auto mb-3 ${muted}`} />
+            <p className={muted}>No companies partnered yet.</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className={tableTh}>Company Name</th>
+                <th className={tableTh}>Industry</th>
+                <th className={tableTh}>Jobs Posted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {companies.map((c: any, i: number) => (
+                <tr key={i}>
+                  <td className={tableTd}>{c.name}</td>
+                  <td className={tableTd}>{c.industry || "—"}</td>
+                  <td className={tableTd}>{c._count?.jobs || 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
@@ -290,17 +496,405 @@ export function SimplePlaceholder({ title, desc }: { title: string, desc: string
   );
 }
 
+export function AcademicUnitsPage() {
+  const { theme } = useTheme();
+  const dk = theme === "dark";
+  const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
+  const [units, setUnits] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ id: 0, name: "", type: "Section", parentType: "", parentId: "" });
+
+  const fetchUnits = () => {
+    setLoading(true);
+    fetch(`${API_BASE}/university/academic-units/tree`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : { tree: [] }))
+      .then((data) => setUnits(flattenUnitTree(data.tree || [])))
+      .catch(() => setUnits([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchUnits();
+  }, []);
+
+  const resetForm = () => setForm({ id: 0, name: "", type: "Section", parentType: "", parentId: "" });
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    const url = form.id ? `${API_BASE}/university/academic-units/${form.id}` : `${API_BASE}/university/academic-units`;
+    const method = form.id ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({
+        name: form.name,
+        type: form.type,
+        parentId: form.parentId ? Number(form.parentId) : null,
+      }),
+    });
+    if (res.ok) {
+      resetForm();
+      fetchUnits();
+      toast.success(form.id ? "Academic unit updated." : "Academic unit created.");
+    } else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || "Failed to save academic unit.");
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    const res = await fetch(`${API_BASE}/university/academic-units/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (res.ok) fetchUnits();
+    else {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || "Failed to delete academic unit.");
+    }
+  };
+
+  const editingUnit = units.find((unit) => unit.id === form.id);
+  const parentOptions = units.filter((unit) => (
+    unit.id !== form.id &&
+    (!form.parentType || unit.type === form.parentType) &&
+    (!editingUnit || !unit.path.startsWith(`${editingUnit.path} > `))
+  ));
+  const parentTypes = Array.from(new Set(units.map((unit) => unit.type).filter(Boolean)));
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className={`text-2xl tracking-tight ${heading}`}>Academic Units</h1>
+        <p className={`text-sm mt-1 ${muted}`}>Manage the hierarchy students select during registration.</p>
+      </div>
+      <div className={card}>
+        <h3 className={`text-sm font-medium mb-4 ${heading}`}>{form.id ? "Edit Unit" : "Create Unit"}</h3>
+        <div className="grid md:grid-cols-5 gap-4">
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Name" className={`px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10" : "bg-white border-gray-300"}`} />
+          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={`px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10" : "bg-white border-gray-300"}`}>
+            {["School", "Department", "Section", "Stream", "Branch", "Program"].map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+          <select value={form.parentType} onChange={(e) => setForm({ ...form, parentType: e.target.value, parentId: "" })} className={`px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10" : "bg-white border-gray-300"}`}>
+            <option value="">Parent type</option>
+            {parentTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+          <select value={form.parentId} onChange={(e) => setForm({ ...form, parentId: e.target.value })} className={`px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10" : "bg-white border-gray-300"}`}>
+            <option value="">No parent</option>
+            {parentOptions.map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">{form.id ? "Update" : "Create"}</button>
+            {form.id !== 0 && <button onClick={resetForm} className={`px-4 py-2 rounded-lg text-sm border ${dk ? "border-white/10 text-gray-300" : "border-gray-200 text-gray-700"}`}>Cancel</button>}
+          </div>
+        </div>
+      </div>
+
+      <div className={card}>
+        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className={tableTh}>Path</th>
+                <th className={tableTh}>Type</th>
+                <th className={`${tableTh} text-right`}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {units.map((unit) => (
+                <tr key={unit.id}>
+                  <td className={tableTd}>{unit.path}</td>
+                  <td className={tableTd}>{unit.type || "Unit"}</td>
+                  <td className={`${tableTd} text-right space-x-2`}>
+                    <button onClick={() => {
+                      const parent = units.find((candidate) => candidate.id === unit.parentId);
+                      setForm({ id: unit.id, name: unit.label, type: unit.type || "Section", parentType: parent?.type || "", parentId: unit.parentId ? String(unit.parentId) : "" });
+                    }} className="text-xs text-blue-600">Edit</button>
+                    {!unit.hasChildren && <button onClick={() => handleDelete(unit.id)} className="text-xs text-red-500">Delete</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+export function StudentAnalytics() {
+  const { theme } = useTheme();
+  const dk = theme === "dark";
+  const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/analytics/students`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setStats(data))
+      .catch(() => {});
+  }, []);
+
+  if (!stats) return <div className="p-6"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className={`text-2xl tracking-tight ${heading}`}>Student Analytics</h1>
+        <p className={`text-sm mt-1 ${muted}`}>Detailed placement graphs and metrics.</p>
+      </div>
+      <div className="grid md:grid-cols-4 gap-4">
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.totalStudents}</p>
+          <p className={`text-xs mt-1 ${muted}`}>Total Students</p>
+        </div>
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.placedStudents}</p>
+          <p className={`text-xs mt-1 ${muted}`}>Placed</p>
+        </div>
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.unplacedStudents}</p>
+          <p className={`text-xs mt-1 ${muted}`}>Unplaced</p>
+        </div>
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.placementRate}%</p>
+          <p className={`text-xs mt-1 ${muted}`}>Placement Rate</p>
+        </div>
+      </div>
+      <div className={card}>
+        <h3 className={`text-sm font-medium mb-4 ${heading}`}>Placement by Branch</h3>
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className={tableTh}>Branch</th>
+              <th className={tableTh}>Total</th>
+              <th className={tableTh}>Placed</th>
+              <th className={tableTh}>Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(stats.branchStats || []).map((b: any, i: number) => (
+              <tr key={i}>
+                <td className={tableTd}>{b.branch}</td>
+                <td className={tableTd}>{b.total}</td>
+                <td className={tableTd}>{b.placed}</td>
+                <td className={tableTd}>{b.rate}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function RecruiterAnalytics() {
+  const { theme } = useTheme();
+  const dk = theme === "dark";
+  const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/analytics/recruiters`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setStats(data))
+      .catch(() => {});
+  }, []);
+
+  if (!stats) return <div className="p-6"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className={`text-2xl tracking-tight ${heading}`}>Recruiter Analytics</h1>
+        <p className={`text-sm mt-1 ${muted}`}>Recruiter engagement and hiring statistics.</p>
+      </div>
+      <div className="grid md:grid-cols-4 gap-4">
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.totalCompanies}</p>
+          <p className={`text-xs mt-1 ${muted}`}>Total Companies</p>
+        </div>
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.totalJobs}</p>
+          <p className={`text-xs mt-1 ${muted}`}>Total Jobs</p>
+        </div>
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.activeJobs}</p>
+          <p className={`text-xs mt-1 ${muted}`}>Active Jobs</p>
+        </div>
+        <div className={`${card} text-center`}>
+          <p className={`text-3xl tracking-tight ${heading}`}>{stats.totalApplications}</p>
+          <p className={`text-xs mt-1 ${muted}`}>Total Applications</p>
+        </div>
+      </div>
+      <div className={card}>
+        <h3 className={`text-sm font-medium mb-4 ${heading}`}>Top Hiring Companies</h3>
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className={tableTh}>Company</th>
+              <th className={tableTh}>Jobs Posted</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(stats.topCompanies || []).map((c: any, i: number) => (
+              <tr key={i}>
+                <td className={tableTd}>{c.name}</td>
+                <td className={tableTd}>{c.jobsPosted}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function SettingsPage() {
+  const { theme } = useTheme();
+  const dk = theme === "dark";
+  const { card, heading, muted } = getStyles(dk);
+  
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [settings, setSettings] = useState({
+    name: "",
+    minGlobalCgpa: 0,
+    maxGlobalBacklogs: 0,
+    allowedBranches: [] as string[]
+  });
+
+  const fetchSettings = () => {
+    setLoading(true);
+    fetch(`${API_BASE}/university/settings`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.university) {
+          const uni = data.university;
+          const filter = uni.filters.length > 0 ? uni.filters[0] : null;
+          setSettings({
+            name: uni.name || "",
+            minGlobalCgpa: filter ? filter.minGlobalCgpa : 0,
+            maxGlobalBacklogs: filter ? filter.maxGlobalBacklogs : 0,
+            allowedBranches: filter && filter.allowedBranches ? filter.allowedBranches : []
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/university/settings`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}` 
+        },
+        body: JSON.stringify(settings)
+      });
+      if (res.ok) {
+        toast.success("Settings saved successfully.");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className={`text-2xl tracking-tight ${heading}`}>Settings</h1>
+        <p className={`text-sm mt-1 ${muted}`}>Manage institution profile and configuration.</p>
+      </div>
+
+      <div className={`${card} max-w-2xl`}>
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <h3 className={`text-sm font-medium mb-4 ${heading}`}>University Profile</h3>
+              <label className={`block text-xs mb-1.5 ${muted}`}>University Name</label>
+              <input
+                value={settings.name}
+                onChange={(e) => setSettings({ ...settings, name: e.target.value })}
+                className={`w-full px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10 focus:border-blue-500/50" : "bg-white border-gray-300 focus:border-blue-500"}`}
+              />
+            </div>
+
+            <div className={`pt-6 border-t ${dk ? "border-white/10" : "border-gray-200"}`}>
+              <h3 className={`text-sm font-medium mb-4 ${heading}`}>Global Eligibility Filters</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-xs mb-1.5 ${muted}`}>Minimum CGPA required to register</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={settings.minGlobalCgpa}
+                    onChange={(e) => setSettings({ ...settings, minGlobalCgpa: parseFloat(e.target.value) || 0 })}
+                    className={`w-full px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10 focus:border-blue-500/50" : "bg-white border-gray-300 focus:border-blue-500"}`}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs mb-1.5 ${muted}`}>Maximum Active Backlogs allowed</label>
+                  <input
+                    type="number"
+                    value={settings.maxGlobalBacklogs}
+                    onChange={(e) => setSettings({ ...settings, maxGlobalBacklogs: parseInt(e.target.value) || 0 })}
+                    className={`w-full px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10 focus:border-blue-500/50" : "bg-white border-gray-300 focus:border-blue-500"}`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save Settings"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function DataRequestsPage() {
   const { theme } = useTheme();
   const dk = theme === "dark";
   const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
   const [requests, setRequests] = useState<any[]>([]);
+  const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ fieldName: "", fieldType: "text", isRequired: true });
 
-  useEffect(() => {
+  const fetchRequests = () => {
+    setLoading(true);
     fetch(`${API_BASE}/university/data-requests`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
@@ -308,6 +902,20 @@ export function DataRequestsPage() {
       .then((data) => setRequests(Array.isArray(data) ? data : []))
       .catch(() => setRequests([]))
       .finally(() => setLoading(false));
+  };
+
+  const fetchSubmissions = () => {
+    fetch(`${API_BASE}/university/data-requests/submissions`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => (r.ok ? r.json() : { submissions: [] }))
+      .then((data) => setSubmissions(data.submissions || []))
+      .catch(() => setSubmissions([]));
+  };
+
+  useEffect(() => {
+    fetchRequests();
+    fetchSubmissions();
   }, []);
 
   const handleCreate = async () => {
@@ -329,6 +937,40 @@ export function DataRequestsPage() {
     }
   };
 
+  const handleDelete = async (id: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/data-requests/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (res.ok) {
+        setRequests((current) => current.filter((request) => request.id !== id));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSubmissionStatus = async (id: number, status: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/university/data-requests/submissions/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        toast.success(`Submission ${status.toLowerCase()}.`);
+        fetchSubmissions();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to update submission.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to update submission.");
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -342,25 +984,45 @@ export function DataRequestsPage() {
       </div>
 
       {showForm && (
-        <div className={`${card} space-y-4`}>
-          <h3 className={`text-sm font-medium ${heading}`}>New Data Request</h3>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className={`text-xs block mb-1 ${muted}`}>Field Name (e.g., Aadhar Card)</label>
-              <input value={form.fieldName} onChange={e => setForm({...form, fieldName: e.target.value})} className={`w-full px-3 py-2 rounded-lg text-sm border ${dk ? "bg-[#1a1a24] border-white/10 text-gray-200" : "bg-white border-gray-200 text-gray-900"} outline-none focus:border-blue-500`} />
+        <div className={`${card} border-blue-500/30`}>
+          <h3 className={`text-sm font-medium mb-4 ${heading}`}>Create New Data Request</h3>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <label className={`block text-xs mb-1.5 ${muted}`}>Field Name</label>
+              <input
+                value={form.fieldName}
+                onChange={(e) => setForm({ ...form, fieldName: e.target.value })}
+                placeholder="e.g. GitHub URL, Portfolio Link"
+                className={`w-full px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10 focus:border-blue-500/50" : "bg-white border-gray-300 focus:border-blue-500"}`}
+              />
             </div>
-            <div>
-              <label className={`text-xs block mb-1 ${muted}`}>Field Type (e.g., file, text)</label>
-              <input value={form.fieldType} onChange={e => setForm({...form, fieldType: e.target.value})} className={`w-full px-3 py-2 rounded-lg text-sm border ${dk ? "bg-[#1a1a24] border-white/10 text-gray-200" : "bg-white border-gray-200 text-gray-900"} outline-none focus:border-blue-500`} />
+            <div className="w-40">
+              <label className={`block text-xs mb-1.5 ${muted}`}>Type</label>
+              <select
+                value={form.fieldType}
+                onChange={(e) => setForm({ ...form, fieldType: e.target.value })}
+                className={`w-full px-3 py-2 rounded-lg text-sm border outline-none ${dk ? "bg-black/50 border-white/10" : "bg-white border-gray-300"}`}
+              >
+                <option value="text">Text / String</option>
+                <option value="url">URL Link</option>
+                <option value="number">Number</option>
+              </select>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="isRequired" checked={form.isRequired} onChange={e => setForm({...form, isRequired: e.target.checked})} className="rounded border-gray-300" />
-            <label htmlFor="isRequired" className={`text-sm ${heading}`}>Required</label>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => setShowForm(false)} className={`px-4 py-2 rounded-lg text-sm border ${dk ? "border-white/10 text-gray-300" : "border-gray-200 text-gray-700"}`}>Cancel</button>
-            <button onClick={handleCreate} className={`px-4 py-2 rounded-lg text-sm text-white bg-blue-600 hover:bg-blue-500`}>Save Request</button>
+            <div className="flex items-center gap-2 pb-2">
+              <input
+                type="checkbox"
+                checked={form.isRequired}
+                onChange={(e) => setForm({ ...form, isRequired: e.target.checked })}
+                className="rounded text-blue-600"
+              />
+              <span className={`text-sm ${muted}`}>Required</span>
+            </div>
+            <button
+              onClick={handleCreate}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              Save Field
+            </button>
           </div>
         </div>
       )}
@@ -369,7 +1031,6 @@ export function DataRequestsPage() {
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span className={`ml-2 text-sm ${muted}`}>Loading requests…</span>
           </div>
         ) : (
           <table className="w-full">
@@ -378,19 +1039,150 @@ export function DataRequestsPage() {
                 <th className={tableTh}>Field Name</th>
                 <th className={tableTh}>Type</th>
                 <th className={tableTh}>Required</th>
+                <th className={`${tableTh} text-right`}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {requests.length === 0 ? (
-                <tr><td colSpan={3} className={`py-6 text-center ${muted}`}>No data requests defined.</td></tr>
+                <tr><td colSpan={4} className={`py-6 text-center ${muted}`}>No custom fields created.</td></tr>
               ) : requests.map((r: any, i: number) => (
                 <tr key={i}>
                   <td className={tableTd}>{r.fieldName}</td>
-                  <td className={tableTd}>{r.fieldType || "—"}</td>
+                  <td className={tableTd}>{r.fieldType}</td>
+                  <td className={tableTd}>{r.isRequired ? "Yes" : "No"}</td>
+                  <td className={`${tableTd} text-right`}>
+                    <button onClick={() => handleDelete(r.id)} className="text-red-500 hover:text-red-600 text-xs">Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className={card}>
+        <h3 className={`text-sm font-medium mb-4 ${heading}`}>Student Submissions</h3>
+        {submissions.length === 0 ? (
+          <p className={`text-sm ${muted}`}>No student submissions yet.</p>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className={tableTh}>Student</th>
+                <th className={tableTh}>Request</th>
+                <th className={tableTh}>Value</th>
+                <th className={tableTh}>Status</th>
+                <th className={`${tableTh} text-right`}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {submissions.map((submission: any) => (
+                <tr key={submission.id}>
+                  <td className={tableTd}>{submission.student?.user?.name || "—"}</td>
+                  <td className={tableTd}>{submission.request?.fieldName || "—"}</td>
+                  <td className={tableTd}>{submission.value}</td>
+                  <td className={tableTd}>{submission.status || "PENDING"}</td>
+                  <td className={`${tableTd} text-right space-x-2`}>
+                    {submission.status !== "APPROVED" && (
+                      <button onClick={() => handleSubmissionStatus(submission.id, "APPROVED")} className="text-xs text-green-600 hover:text-green-700">Approve</button>
+                    )}
+                    {submission.status !== "REJECTED" && (
+                      <button onClick={() => handleSubmissionStatus(submission.id, "REJECTED")} className="text-xs text-red-500 hover:text-red-600">Reject</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function CertificationsReview() {
+  const { theme } = useTheme();
+  const dk = theme === 'dark';
+  const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
+  const [certs, setCerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCerts = async () => {
+    try {
+      const res = await fetch(API_BASE + '/university/certifications', {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      if (res.ok) setCerts(await res.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchCerts(); }, []);
+
+  const toggleVerify = async (id: number, verify: boolean) => {
+    try {
+      const res = await fetch(API_BASE + `/university/certifications/${id}/verify`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ verified: verify })
+      });
+      if (res.ok) {
+        toast.success(verify ? 'Certification verified' : 'Certification rejected');
+        fetchCerts();
+      }
+    } catch (e) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className={`text-2xl tracking-tight ${heading}`}>Certification Review</h1>
+        <p className={`text-sm mt-1 ${muted}`}>Verify student certifications to reflect accurately in profiles.</p>
+      </div>
+      <div className={card}>
+        {loading ? <div className="flex justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+        </div> : (
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className={tableTh}>Student</th>
+                <th className={tableTh}>Platform</th>
+                <th className={tableTh}>Certificate</th>
+                <th className={tableTh}>Issue Date</th>
+                <th className={tableTh}>Status</th>
+                <th className={tableTh}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {certs.length === 0 && <tr><td colSpan={6} className="text-center py-4 text-sm text-gray-500">No certifications found.</td></tr>}
+              {certs.map(c => (
+                <tr key={c.id}>
                   <td className={tableTd}>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.isRequired ? (dk ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-600") : (dk ? "bg-gray-500/10 text-gray-400" : "bg-gray-100 text-gray-600")}`}>
-                      {r.isRequired ? "Yes" : "No"}
-                    </span>
+                    <div className="font-medium">{c.studentName}</div>
+                    <div className="text-xs text-gray-400">{c.studentBranch}</div>
+                  </td>
+                  <td className={tableTd}>{c.platform}</td>
+                  <td className={tableTd}>
+                    {c.credentialUrl ? <a href={c.credentialUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">{c.name}</a> : c.name}
+                  </td>
+                  <td className={tableTd}>{c.issueDate}</td>
+                  <td className={tableTd}>
+                    {c.verified ? 
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600">Verified</span> :
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">Pending</span>
+                    }
+                  </td>
+                  <td className={tableTd}>
+                    <div className="flex gap-2">
+                      {!c.verified && <button onClick={() => toggleVerify(c.id, true)} className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600">Verify</button>}
+                      {c.verified && <button onClick={() => toggleVerify(c.id, false)} className="text-xs px-2 py-1 border border-red-200 text-red-500 rounded hover:bg-red-50">Reject</button>}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -19,4 +19,20 @@ router.get(
     analyticsController.getJobApplicants
 );
 
+// GET /api/analytics/students -> University Admin only
+router.get(
+    '/students', 
+    authenticateToken, 
+    requireRole(['UNIVERSITY']), 
+    analyticsController.getStudentAnalytics
+);
+
+// GET /api/analytics/recruiters -> University Admin only
+router.get(
+    '/recruiters', 
+    authenticateToken, 
+    requireRole(['UNIVERSITY']), 
+    analyticsController.getRecruiterAnalytics
+);
+
 module.exports = router;

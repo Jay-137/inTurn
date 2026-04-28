@@ -11,6 +11,7 @@ function getToken() { return localStorage.getItem("token") || ""; }
 
 /* ─── Shared Filter Type ─── */
 export type EligibleFilters = {
+  academicUnitId?: number;
   course?: string;
   streams?: string[];
   departments?: string[];
@@ -456,6 +457,7 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
     params.set("sortBy", sortKey === "cgpa" ? "cgpa" : "cgpa");
     params.set("sortDir", sortDir);
     if (searchQuery) { params.set("search", searchQuery); params.set("searchType", searchType); }
+    if (initialFilters?.academicUnitId) params.set("academicUnitId", String(initialFilters.academicUnitId));
     if (branch) params.set("branch", branch);
     if (placementStatus) params.set("placementStatus", placementStatus);
     if (cgpaRange[0] > 0) params.set("minCgpa", String(cgpaRange[0]));
@@ -469,10 +471,10 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
         const mapped = (data.students || []).map((s: any) => ({
           id: s.id,
           name: s.user?.name || "—",
-          course: "",
-          stream: s.branch || s.academicUnit?.name || "—",
-          dept: s.academicUnit?.name || "—",
-          section: "",
+          course: Array.isArray(s.academicPath) ? (s.academicPath[0] || "") : "",
+          stream: s.placementBranch || s.branch || s.academicUnit?.name || "—",
+          dept: Array.isArray(s.academicPath) ? (s.academicPath[s.academicPath.length - 2] || s.academicUnit?.name || "—") : s.academicUnit?.name || "—",
+          section: s.academicUnit?.type === "Section" ? s.academicUnit?.name || "" : "",
           cgpa: s.cgpa || 0,
           tenth: 0,
           twelfth: 0,
@@ -488,7 +490,7 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
       })
       .catch(() => { setAllStudents([]); setTotalCount(0); })
       .finally(() => setLoading(false));
-  }, [page, sortKey, sortDir, searchQuery, searchType, branch, placementStatus, cgpaRange]);
+  }, [page, sortKey, sortDir, searchQuery, searchType, branch, placementStatus, cgpaRange, initialFilters?.academicUnitId]);
 
   /* Since pagination is server-side now */
   const filteredStudents = allStudents;

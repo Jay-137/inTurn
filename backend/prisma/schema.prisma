@@ -54,6 +54,7 @@ model Student {
   branch             String?
   videoResumeUrl     String?
   resumeUrl          String?
+  rejectionReason    String?
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   university   University   @relation(fields: [universityId], references: [id])
@@ -118,6 +119,7 @@ model Job {
   salary         String?
   type           String? // e.g., "Internship", "Full-time"
   tags           Json? // e.g., ["React", "Node.js"]
+  approvalStatus String   @default("PENDING") // e.g., "PENDING", "APPROVED", "REJECTED"
   createdAt      DateTime @default(now())
 
   company Company? @relation(fields: [companyId], references: [id])
@@ -246,6 +248,9 @@ model StudentExtraData {
   studentId    Int
   requestId    Int
   value        String   @db.Text
+  status       String   @default("PENDING")
+  reviewedAt   DateTime?
+  rejectionReason String?
 
   student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   request      UniversityDataRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)

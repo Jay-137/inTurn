@@ -54,7 +54,9 @@ const calculateTechScore = (githubStats, targetLanguage) => {
     const langCount = Number(githubStats.languageBreakdown[targetLanguage]) || 0;
     if (langCount === 0) return 0.0;
 
-    const volumeScore = Math.min(1.0, langCount / 5);
+    const volumeScore = langCount > 1000
+        ? Math.min(1.0, Math.log10(langCount) / 6)
+        : Math.min(1.0, langCount / 5);
     const qualityMultiplier = Math.min(1.5, 1 + (Number(githubStats.totalStars || 0) / 50));
     let rawScore = volumeScore * qualityMultiplier;
 
@@ -93,7 +95,10 @@ const FRAMEWORK_MAP = {
     'flutter': 'Flutter',
     'mongodb': 'MongoDB',
     'postgresql': 'PostgreSQL',
+    'postgres': 'PostgreSQL',
+    'pg': 'PostgreSQL',
     'mysql': 'MySQL',
+    'mysql2': 'MySQL',
     'redis': 'Redis',
     'firebase': 'Firebase',
     'supabase': 'Supabase',
@@ -107,6 +112,10 @@ const FRAMEWORK_MAP = {
     'scikit-learn': 'Scikit-Learn',
     'opencv': 'OpenCV',
     'laravel': 'Laravel',
+    'prisma': 'Prisma',
+    'mongoose': 'Mongoose',
+    'sequelize': 'Sequelize',
+    'mariadb': 'MariaDB',
 };
 
 /**
@@ -163,10 +172,11 @@ const generateSkillVector = (student) => {
         else if (platform === 'github') ghStats = profile.stats;
     });
 
-    // 1. DSA from LeetCode/Codeforces
+    // 1. DSA / problem solving from verified coding platforms only.
     const dsaScore = calculateDsaScore(lcStats, cfStats);
     if (dsaScore > 0) {
         vector['DSA'] = Math.round(dsaScore * 100) / 100;
+        vector['Problem Solving'] = Math.round(dsaScore * 100) / 100;
     }
 
     // 2. Academic Fundamentals from CGPA
@@ -204,6 +214,17 @@ const generateSkillVector = (student) => {
                 vector[name] = Math.max(vector[name] || 0, finalFwScore);
             });
         }
+
+        // Dependencies detected from package.json / pom.xml / requirements.txt
+        if (Array.isArray(ghStats.dependencies)) {
+            ghStats.dependencies.forEach(dep => {
+                const name = FRAMEWORK_MAP[dep];
+                if (name && !vector[name]) {
+                    // Dependency presence gives a slightly lower base score than framework detection
+                    vector[name] = Math.max(vector[name] || 0, 0.5);
+                }
+            });
+        }
     }
 
     // 4. Skills from Internship Experiences
@@ -217,6 +238,9 @@ const generateSkillVector = (student) => {
                     // Boost to 0.7 if it's an internship (real-world usage)
                     const expScore = exp.type === 'internship' ? 0.7 : 0.5;
                     vector[name] = Math.max(vector[name] || 0, expScore);
+                    if (name === 'DSA') {
+                        vector['Problem Solving'] = Math.max(vector['Problem Solving'] || 0, expScore);
+                    }
                 });
             }
         });
@@ -246,6 +270,15 @@ const generateSkillVector = (student) => {
                 }
             });
 
+            if (
+                certName.includes('dsa') ||
+                certName.includes('algorithm') ||
+                certName.includes('data structure') ||
+                certName.includes('problem solving')
+            ) {
+                certSkills.push('DSA', 'Problem Solving');
+            }
+
             // If no specific skill detected, use the platform as a general marker
             if (certSkills.length === 0 && cert.platform) {
                 const platformLower = cert.platform.toLowerCase();
@@ -273,6 +306,7 @@ const generateSkillVector = (student) => {
             if (isHighGrade) {
                 if (name.includes('data structure') || name.includes('algorithm')) {
                     vector['DSA'] = Math.min(1.0, (vector['DSA'] || 0) + 0.2);
+                    vector['Problem Solving'] = Math.min(1.0, (vector['Problem Solving'] || 0) + 0.2);
                 }
                 if (name.includes('database') || name.includes('dbms')) {
                     vector['SQL'] = Math.min(1.0, (vector['SQL'] || 0) + 0.2);
@@ -285,11 +319,6 @@ const generateSkillVector = (student) => {
                 }
             }
         });
-    }
-
-    // 7. Fallback for students with only Academics
-    if (Object.keys(vector).length <= 1 && vector['Academic Fundamentals']) {
-        vector['Problem Solving'] = Math.round(academicBase * 0.8 * 100) / 100;
     }
 
     console.log('[SkillVector] Generated skills:', JSON.stringify(vector, null, 2));

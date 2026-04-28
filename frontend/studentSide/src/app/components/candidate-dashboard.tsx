@@ -78,6 +78,11 @@ export function CandidateDashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [loadingJobs, setLoadingJobs] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState({
+    shortlistedCount: 0,
+    totalApplications: 0,
+    shortlistedApplications: [] as any[],
+  });
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // Fetch student profile
@@ -103,6 +108,18 @@ export function CandidateDashboard() {
       .catch(() => setJobs([]))
       .finally(() => setLoadingJobs(false));
   }, []);
+
+  useEffect(() => {
+    if (!studentProfile) return;
+    studentApi
+      .getDashboardStats()
+      .then((stats) => setDashboardStats({
+        shortlistedCount: stats.shortlistedCount || 0,
+        totalApplications: stats.totalApplications || 0,
+        shortlistedApplications: stats.shortlistedApplications || [],
+      }))
+      .catch(() => setDashboardStats({ shortlistedCount: 0, totalApplications: 0, shortlistedApplications: [] }));
+  }, [studentProfile]);
 
   const linkedCount = Object.values(linkedPlatforms).filter(Boolean).length;
   const totalPlatforms = Object.keys(linkedPlatforms).length;
@@ -139,7 +156,22 @@ export function CandidateDashboard() {
       : jobsWithMeta;
 
   const topJobs = [...filteredJobs].sort((a, b) => b.match - a.match).slice(0, 3);
-  const shortlistedCount = jobsWithMeta.filter((j) => j.match >= 75).length;
+  const shortlistedCount = dashboardStats.shortlistedCount;
+  const shortlistedJobs = dashboardStats.shortlistedApplications.map((app: any) => ({
+    ...(app.job || {}),
+    id: app.job?.id || app.id,
+    role: app.job?.title || "Opportunity",
+    title: app.job?.title || "Opportunity",
+    location: app.job?.location || "Remote",
+    tags: Array.isArray(app.job?.tags) ? app.job.tags : ["Shortlisted"],
+    salary: app.job?.salary || "Unspecified",
+    type: app.job?.type || "Full-time",
+    deadline: app.job?.deadline || new Date().toISOString(),
+    match: Math.round(app.matchScore || 0),
+    hasRealScore: app.matchScore !== null && app.matchScore !== undefined,
+    eligible: true,
+    applicationStatus: app.status,
+  }));
 
   // Eligibility items derived from real profile
   const eligibilityItems = studentProfile
@@ -194,7 +226,7 @@ export function CandidateDashboard() {
     },
     {
       icon: Award,
-      text: `You align with ${shortlistedCount} roles in the placement pool`,
+      text: `You have ${shortlistedCount} recruiter-shortlisted opportunit${shortlistedCount === 1 ? "y" : "ies"}`,
       color: "text-indigo-600",
       bg: "bg-indigo-50",
     }
@@ -265,7 +297,7 @@ export function CandidateDashboard() {
             <span className="text-white">
               {shortlistedCount} shortlisted opportunities
             </span>{" "}
-            based on your profile and eligibility.
+            accepted by recruiters for the next stage.
           </p>
           <GradientButton
             className="!bg-white !text-indigo-700 !shadow-none"
@@ -290,7 +322,7 @@ export function CandidateDashboard() {
           icon={<Briefcase className="w-5 h-5" />}
           label="Shortlisted Roles"
           value={shortlistedCount.toString()}
-          trend={loadingJobs ? "Loading…" : `${jobs.length} total drives`}
+          trend="Recruiter accepted applications"
         />
         <StatCard
           icon={<TrendingUp className="w-5 h-5" />}
@@ -636,8 +668,8 @@ export function CandidateDashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {topJobs.length > 0 ? (
-                  topJobs.map((job) => (
+                {shortlistedJobs.length > 0 ? (
+                  shortlistedJobs.map((job: any) => (
                     <motion.div
                       key={job.id}
                       whileHover={{ scale: 1.01 }}
@@ -669,6 +701,7 @@ export function CandidateDashboard() {
                             {t}
                           </span>
                         ))}
+                        <Badge variant="success">{job.applicationStatus || "SHORTLISTED"}</Badge>
                         {job.hasRealScore && studentProfile && job.match >= 88 ? (
                           <Badge variant="priority">
                             <Star className="w-3 h-3 mr-1" /> Top Shortlist
@@ -686,9 +719,7 @@ export function CandidateDashboard() {
                   ))
                 ) : (
                   <div className="text-center py-6 text-sm text-gray-400">
-                    {jobs.length === 0
-                      ? "No jobs posted yet. Check back soon!"
-                      : "No shortlisted opportunities for your target roles yet."}
+                    No recruiter-shortlisted opportunities yet.
                   </div>
                 )}
               </div>
@@ -707,8 +738,8 @@ export function CandidateDashboard() {
             </div>
             <div className="space-y-2 mt-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">Total drives</span>
-                <span className="text-indigo-700">{jobs.length} open</span>
+                <span className="text-gray-600">Recruiter shortlists</span>
+                <span className="text-indigo-700">{shortlistedCount}</span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-600">Eligibility criteria</span>
@@ -718,7 +749,7 @@ export function CandidateDashboard() {
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-600">Applications submitted</span>
-                <span className="text-indigo-700">{appliedJobs.length}</span>
+                <span className="text-indigo-700">{dashboardStats.totalApplications || appliedJobs.length}</span>
               </div>
             </div>
             <GradientButton

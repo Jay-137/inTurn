@@ -13,19 +13,51 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [role, setRole] = useState<"recruiter" | "institution">("recruiter");
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError("Please fill in all fields.");
+      setLoginError("Please fill in all fields.");
       return;
     }
-    setError("");
-    if (role === "institution") {
-      navigate("/institution-dashboard");
-    } else {
-      navigate("/recruiter-dashboard");
+    setLoginError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("http://localhost:3000/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Login failed");
+      }
+
+      // Check if user role matches the selected role
+      if (role === "institution" && data.user.role !== "UNIVERSITY") {
+        throw new Error("Invalid role. Please log in as a university.");
+      }
+      if (role === "recruiter" && data.user.role !== "RECRUITER") {
+        throw new Error("Invalid role. Please log in as a recruiter.");
+      }
+
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      if (data.user.role === "UNIVERSITY") {
+        navigate("/institution-dashboard");
+      } else {
+        navigate("/recruiter-dashboard");
+      }
+    } catch (err: any) {
+      setLoginError(err?.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -176,17 +208,18 @@ export function LoginPage() {
           </div>
 
           {/* Error */}
-          {error && (
-            <p className="text-sm text-red-500">{error}</p>
+          {loginError && (
+            <p className="text-sm text-red-500">{loginError}</p>
           )}
 
           {/* Submit */}
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
-            Log in
-            <ArrowRight className="w-4 h-4" />
+            {loading ? "Logging in..." : "Log in"}
+            {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
 

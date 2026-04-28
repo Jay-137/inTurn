@@ -2,26 +2,47 @@ import { useState, useEffect } from "react";
 import { studentApi } from "../../lib/api";
 import { Card, GradientButton, Badge } from "./shared";
 import { motion } from "motion/react";
-import { FileText, Loader2, CheckCircle2, Upload, AlertCircle } from "lucide-react";
+import { FileText, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { useApp } from "./app-context";
 import { toast } from "sonner";
+import { AcademicUnitSelector } from "./academic-unit-selector";
 
 export function StudentData() {
   const { studentProfile, setStudentProfile, authUser } = useApp();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [submittingRequestId, setSubmittingRequestId] = useState<number | null>(null);
   const [submissions, setSubmissions] = useState<Record<number, any>>({});
+  const [academicUnits, setAcademicUnits] = useState<any[]>([]);
+  const [academicTree, setAcademicTree] = useState<any[]>([]);
+  const [unitsLoading, setUnitsLoading] = useState(false);
   
   // Initial setup state
   const [setupData, setSetupData] = useState({
     universityId: 1, // Defaulting for prototype
-    academicUnitId: 1,
+    academicUnitId: 0,
     cgpa: 0,
     backlogCount: 0,
     passingYear: 2026,
-    branch: ""
   });
+
+  const flattenUnits = (nodes: any[], path: string[] = []): any[] => {
+    return nodes.flatMap((node) => {
+      const nextPath = [...path, node.label];
+      const children = Array.isArray(node.children) ? flattenUnits(node.children, nextPath) : [];
+      return [
+        {
+          id: Number(node.id),
+          label: node.label,
+          level: node.level,
+          path: nextPath.join(" > "),
+          hasChildren: Array.isArray(node.children) && node.children.length > 0,
+        },
+        ...children,
+      ];
+    });
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,11 +60,42 @@ export function StudentData() {
     fetchData();
   }, [studentProfile]);
 
+  useEffect(() => {
+    if (studentProfile) return;
+
+    const fetchAcademicUnits = async () => {
+      setUnitsLoading(true);
+      try {
+        const data = await studentApi.getAcademicUnitTree();
+        const tree = data.tree || [];
+        setAcademicTree(tree);
+        const units = flattenUnits(tree);
+        setAcademicUnits(units);
+        const firstLeaf = units.find((unit) => !unit.hasChildren) || units[0];
+        if (firstLeaf) {
+          setSetupData((current) => ({ ...current, academicUnitId: firstLeaf.id }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch academic units", err);
+        toast.error("Unable to load academic units.");
+      } finally {
+        setUnitsLoading(false);
+      }
+    };
+
+    fetchAcademicUnits();
+  }, [studentProfile]);
+
   const handleInitialSetup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!setupData.academicUnitId) {
+      toast.error("Please select your academic unit.");
+      return;
+    }
     setSubmitting(true);
     try {
       await studentApi.createProfile(setupData);
+      await studentApi.generateSkills();
       if (authUser) {
         const profile = await studentApi.getProfile(authUser.id);
         setStudentProfile(profile);
@@ -56,13 +108,24 @@ export function StudentData() {
   };
 
   const handleSubmitExtra = async (requestId: number, value: string) => {
+    setSubmittingRequestId(requestId);
     try {
       await studentApi.submitExtraData({ requestId, value });
       setSubmissions(prev => ({ ...prev, [requestId]: { value, status: "PENDING" } }));
-    } catch (err) {
+      if (authUser) {
+        const profile = await studentApi.getProfile(authUser.id);
+        setStudentProfile(profile);
+      }
+      toast.success("Data submitted for university review.");
+    } catch (err: any) {
       console.error(err);
+      toast.error(err.message || "Failed to submit requested data.");
+    } finally {
+      setSubmittingRequestId(null);
     }
   };
+
+  const selectableAcademicUnits = academicUnits.filter((unit) => !unit.hasChildren);
 
   if (!studentProfile) {
     return (
@@ -105,15 +168,16 @@ export function StudentData() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Branch of Study</label>
-              <input 
-                type="text" 
-                placeholder="e.g. Computer Science and Engineering"
-                required
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-                value={setupData.branch}
-                onChange={e => setSetupData({...setupData, branch: e.target.value})}
+              <label className="text-sm font-medium text-gray-700">Academic Unit</label>
+              <AcademicUnitSelector
+                tree={academicTree}
+                value={setupData.academicUnitId}
+                disabled={unitsLoading || selectableAcademicUnits.length === 0}
+                onChange={(academicUnitId) => setSetupData({ ...setupData, academicUnitId })}
               />
+              <p className="text-xs text-gray-500">
+                Select each hierarchy level until the most specific unit, such as section.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -184,7 +248,7 @@ export function StudentData() {
                     <div className="bg-gray-50 border border-gray-100 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs text-gray-500">Submitted Value</span>
-                        <Badge variant={existing.status === "VERIFIED" ? "success" : existing.status === "REJECTED" ? "warning" : "info"}>
+                        <Badge variant={existing.status === "APPROVED" ? "success" : existing.status === "REJECTED" ? "warning" : "info"}>
                           {existing.status || "PENDING"}
                         </Badge>
                       </div>
@@ -198,7 +262,9 @@ export function StudentData() {
                     }}>
                       <div className="flex gap-2">
                         <input name="value" placeholder="Enter requested information..." required className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-indigo-500" />
-                        <GradientButton size="sm" type="submit">Submit</GradientButton>
+                        <GradientButton size="sm" type="submit" disabled={submittingRequestId === req.id}>
+                          {submittingRequestId === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit"}
+                        </GradientButton>
                       </div>
                     </form>
                   )}

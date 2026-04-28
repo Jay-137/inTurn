@@ -148,6 +148,113 @@ function normalizeSkillName(name) {
     return name.trim().toUpperCase();
 }
 
+function normalizeBranchName(name) {
+    return String(name || '')
+        .trim()
+        .toUpperCase()
+        .replace(/&/g, 'AND')
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+const BRANCH_CONNECTOR_WORDS = new Set(['AND', 'OF', 'THE', 'IN', 'FOR']);
+const BRANCH_DESCRIPTOR_WORDS = new Set([
+    'ENGINEERING',
+    'TECHNOLOGY',
+    'SCIENCES',
+    'SCIENCE',
+    'STUDIES',
+    'DEPARTMENT',
+    'SCHOOL',
+    'BRANCH',
+    'COURSE',
+    'PROGRAM',
+    'PROGRAMME'
+]);
+
+function tokenizeBranchName(name) {
+    const normalized = normalizeBranchName(name);
+    if (!normalized) return [];
+    return normalized.split(' ').filter(Boolean);
+}
+
+function branchAcronym(tokens) {
+    return tokens
+        .filter((token) => !BRANCH_CONNECTOR_WORDS.has(token))
+        .map((token) => token[0])
+        .join('');
+}
+
+function branchCoreTokens(tokens) {
+    return tokens.filter((token) => (
+        !BRANCH_CONNECTOR_WORDS.has(token) &&
+        !BRANCH_DESCRIPTOR_WORDS.has(token)
+    ));
+}
+
+function tokenSetContainsAll(sourceTokens, targetTokens) {
+    const source = new Set(sourceTokens);
+    return targetTokens.length > 0 && targetTokens.every((token) => source.has(token));
+}
+
+function acronymsCompatible(left, right) {
+    if (!left || !right) return false;
+    if (left === right) return true;
+
+    const shorter = left.length <= right.length ? left : right;
+    const longer = left.length <= right.length ? right : left;
+
+    // Handles cases such as CS <-> CSE where the extra letter usually comes
+    // from a generic descriptor like Engineering. Keeps this conservative.
+    return shorter.length >= 2 && longer.startsWith(shorter) && longer.length - shorter.length <= 1;
+}
+
+function branchCodeCandidates(tokens) {
+    const acronym = branchAcronym(tokens);
+    const compact = tokens.join('');
+    const coreCompact = branchCoreTokens(tokens).join('');
+
+    return [acronym, compact, coreCompact].filter(Boolean);
+}
+
+function branchesMatch(studentBranch, targetBranch) {
+    const studentTokens = tokenizeBranchName(studentBranch);
+    const targetTokens = tokenizeBranchName(targetBranch);
+    if (studentTokens.length === 0 || targetTokens.length === 0) return false;
+
+    const studentNormalized = studentTokens.join(' ');
+    const targetNormalized = targetTokens.join(' ');
+    const studentCompact = studentTokens.join('');
+    const targetCompact = targetTokens.join('');
+
+    if (studentNormalized === targetNormalized || studentCompact === targetCompact) {
+        return true;
+    }
+
+    const studentCore = branchCoreTokens(studentTokens);
+    const targetCore = branchCoreTokens(targetTokens);
+
+    if (
+        tokenSetContainsAll(studentCore, targetCore) ||
+        tokenSetContainsAll(targetCore, studentCore)
+    ) {
+        return true;
+    }
+
+    const studentCodes = branchCodeCandidates(studentTokens);
+    const targetCodes = branchCodeCandidates(targetTokens);
+    for (const studentCode of studentCodes) {
+        for (const targetCode of targetCodes) {
+            if (acronymsCompatible(studentCode, targetCode)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 /**
  * Get the category of a skill name from the taxonomy.
  * Returns null if no category is found.
@@ -244,9 +351,10 @@ const evaluateEligibility = async (student, job, universityFilter = null) => {
 
     // 2. Branch and Year Checks
     if (job.targetBranches && Array.isArray(job.targetBranches) && job.targetBranches.length > 0) {
-        if (!student.branch || !job.targetBranches.includes(student.branch)) {
+        const studentBranch = student.branch || student.academicUnit?.name;
+        if (!studentBranch || !job.targetBranches.some((targetBranch) => branchesMatch(studentBranch, targetBranch))) {
             isEligible = false;
-            feedback.push(`Your branch (${student.branch || 'Not set'}) is not eligible. Target branches: ${job.targetBranches.join(', ')}`);
+            feedback.push(`Your branch (${studentBranch || 'Not set'}) is not eligible. Target branches: ${job.targetBranches.join(', ')}`);
         }
     }
 
@@ -338,5 +446,6 @@ const evaluateEligibility = async (student, job, universityFilter = null) => {
 };
 
 module.exports = {
-    evaluateEligibility
+    evaluateEligibility,
+    branchesMatch
 };

@@ -4,23 +4,99 @@ const codeforcesService = require('../services/integrations/codeforces.service')
 const githubService = require('../services/integrations/github.service');
 const { generateSkillVector } = require('../services/engine/skillVectorGenerator');
 
+const PLACEMENT_BRANCH_UNIT_TYPES = new Set(['DEPARTMENT', 'STREAM', 'BRANCH', 'PROGRAM', 'PROGRAMME', 'COURSE']);
+
+const academicUnitParentInclude = {
+    parent: {
+        include: {
+            parent: {
+                include: {
+                    parent: {
+                        include: { parent: true }
+                    }
+                }
+            }
+        }
+    }
+};
+
+function getPlacementBranchFromUnit(unit) {
+    let current = unit;
+    let fallback = unit;
+
+    while (current) {
+        const type = String(current.type || '').toUpperCase();
+        if (PLACEMENT_BRANCH_UNIT_TYPES.has(type)) {
+            return current.name;
+        }
+        if (!['SECTION', 'SCHOOL', 'INSTITUTE', 'FIELD'].includes(type)) {
+            fallback = current;
+        }
+        current = current.parent;
+    }
+
+    return fallback?.name || unit?.name || null;
+}
+
+async function validateSelectableAcademicUnit(academicUnitId, universityId) {
+    const parsedAcademicUnitId = parseInt(academicUnitId, 10);
+    const parsedUniversityId = parseInt(universityId, 10);
+
+    if (!parsedAcademicUnitId || !parsedUniversityId) {
+        return { error: 'University and academic unit are required.' };
+    }
+
+    const academicUnit = await prisma.academicUnit.findUnique({
+        where: { id: parsedAcademicUnitId },
+        include: academicUnitParentInclude
+    });
+
+    if (!academicUnit) {
+        return { error: 'Invalid academic unit selected.' };
+    }
+
+    if (academicUnit.universityId !== parsedUniversityId) {
+        return { error: 'Selected academic unit does not belong to this university.' };
+    }
+
+    const childCount = await prisma.academicUnit.count({
+        where: { parentId: parsedAcademicUnitId }
+    });
+
+    if (childCount > 0) {
+        return { error: 'Please select the most specific academic unit available.' };
+    }
+
+    return {
+        academicUnit,
+        placementBranch: getPlacementBranchFromUnit(academicUnit)
+    };
+}
+
 const createProfile = async (req, res) => {
     try {
         const userId = req.user.id; 
-        const { universityId, academicUnitId, cgpa, backlogCount, passingYear, branch } = req.body;
+        const { universityId, academicUnitId, cgpa, backlogCount, passingYear } = req.body;
 
         const existingProfile = await prisma.student.findUnique({ where: { userId } });
         if (existingProfile) return res.status(400).json({ error: 'Student profile already exists.' });
 
+        const unitSelection = await validateSelectableAcademicUnit(academicUnitId, universityId);
+        if (unitSelection.error) {
+            return res.status(400).json({ error: unitSelection.error });
+        }
+
+        const { academicUnit, placementBranch } = unitSelection;
+
         const student = await prisma.student.create({
             data: {
                 userId,
-                universityId,
-                academicUnitId,
+                universityId: academicUnit.universityId,
+                academicUnitId: academicUnit.id,
                 cgpa,
                 backlogCount,
                 passingYear,
-                branch,
+                branch: placementBranch,
                 registrationStatus: 'PENDING', 
                 placementStatus: 'UNPLACED'
             }
@@ -36,16 +112,40 @@ const createProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { videoResumeUrl, resumeUrl, cgpa, backlogCount } = req.body;
+        const { videoResumeUrl, resumeUrl, cgpa, backlogCount, passingYear, academicUnitId } = req.body;
+
+        const currentStudent = await prisma.student.findUnique({ where: { userId } });
+        if (!currentStudent) return res.status(404).json({ error: 'Student profile not found.' });
+
+        const academicDetailsChanged = (
+            cgpa !== undefined ||
+            backlogCount !== undefined ||
+            passingYear !== undefined ||
+            academicUnitId !== undefined
+        );
+
+        const data = {
+            ...(videoResumeUrl !== undefined && { videoResumeUrl }),
+            ...(resumeUrl !== undefined && { resumeUrl }),
+            ...(cgpa !== undefined && { cgpa }),
+            ...(backlogCount !== undefined && { backlogCount }),
+            ...(passingYear !== undefined && { passingYear }),
+            ...(academicDetailsChanged && { registrationStatus: 'PENDING', rejectionReason: null })
+        };
+
+        if (academicUnitId !== undefined) {
+            const unitSelection = await validateSelectableAcademicUnit(academicUnitId, currentStudent.universityId);
+            if (unitSelection.error) {
+                return res.status(400).json({ error: unitSelection.error });
+            }
+
+            data.academicUnitId = unitSelection.academicUnit.id;
+            data.branch = unitSelection.placementBranch;
+        }
 
         const student = await prisma.student.update({
             where: { userId },
-            data: {
-                ...(videoResumeUrl !== undefined && { videoResumeUrl }),
-                ...(resumeUrl !== undefined && { resumeUrl }),
-                ...(cgpa !== undefined && { cgpa }),
-                ...(backlogCount !== undefined && { backlogCount })
-            }
+            data
         });
 
         res.json({ message: "Profile updated", student });
@@ -111,6 +211,31 @@ const requestPlatformVerification = async (req, res) => {
             }
         });
 
+        // Immediately fetch stats so the user can see their data before verification
+        let stats = null;
+        try {
+            if (platform === 'leetcode') {
+                const rawData = await leetcodeService.fetchLeetcodeProfile(handle);
+                stats = leetcodeService.parseStats(rawData);
+            } else if (platform === 'codeforces') {
+                const cfProfile = await codeforcesService.fetchCodeforcesProfile(handle);
+                const cfSubs = await codeforcesService.fetchUserSubmissions(handle);
+                stats = codeforcesService.parseStats(cfProfile, cfSubs);
+            } else if (platform === 'github') {
+                const ghProfile = await githubService.fetchGithubProfile(handle);
+                const ghRepos = await githubService.fetchGithubRepos(handle);
+                stats = await githubService.parseStatsWithRepoSignals(ghProfile, ghRepos);
+            }
+            if (stats) {
+                await prisma.externalProfile.update({
+                    where: { id: profile.id },
+                    data: { stats }
+                });
+            }
+        } catch (statsFetchErr) {
+            console.error(`[Platform] Stats pre-fetch failed for ${platform}:`, statsFetchErr.message);
+        }
+
         res.json({ message: `Please place the token '${token}' in your ${platform} bio/location`, token, profileId: profile.id });
     } catch (error) {
         console.error(error);
@@ -147,7 +272,7 @@ const verifyPlatform = async (req, res) => {
             if (isVerified) {
                 const ghProfile = await githubService.fetchGithubProfile(profile.url);
                 const ghRepos = await githubService.fetchGithubRepos(profile.url);
-                stats = githubService.parseStats(ghProfile, ghRepos);
+                stats = await githubService.parseStatsWithRepoSignals(ghProfile, ghRepos);
             }
         }
 
@@ -346,6 +471,57 @@ const markNotificationRead = async (req, res) => {
     }
 };
 
+const getDashboardStats = async (req, res) => {
+    try {
+        const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
+        if (!student) return res.status(404).json({ error: 'Student not found' });
+
+        const shortlistedStatuses = ['SHORTLISTED', 'ACCEPTED_BY_RECRUITER', 'SELECTED_BY_RECRUITER'];
+        const shortlistedApplications = await prisma.application.findMany({
+            where: {
+                studentId: student.id,
+                status: { in: shortlistedStatuses }
+            },
+            include: { job: { include: { company: true } } },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        const totalApplications = await prisma.application.count({
+            where: { studentId: student.id }
+        });
+
+        res.json({
+            shortlistedCount: shortlistedApplications.length,
+            totalApplications,
+            shortlistedApplications
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    }
+};
+
+
+const deleteNotification = async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        await prisma.notification.delete({ where: { id, userId: req.user.id } });
+        res.json({ message: 'Notification deleted' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to delete notification' });
+    }
+};
+
+const clearAllNotifications = async (req, res) => {
+    try {
+        await prisma.notification.deleteMany({ where: { userId: req.user.id } });
+        res.json({ message: 'All notifications cleared' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to clear notifications' });
+    }
+};
 module.exports = { 
     createProfile, 
     updateProfile,
@@ -360,5 +536,8 @@ module.exports = {
     removePlatform,
     updateSoftSkills,
     getNotifications,
-    markNotificationRead
+    markNotificationRead,
+    getDashboardStats,
+    deleteNotification,
+    clearAllNotifications
 };

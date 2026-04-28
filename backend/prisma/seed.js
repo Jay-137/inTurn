@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const { PrismaMariaDb } = require('@prisma/adapter-mariadb');
 const bcrypt = require('bcrypt');
@@ -22,29 +23,27 @@ async function main() {
         const tables = [
             'PlacementSelection', 'Application', 'JobSkill', 'Job', 
             'StudentSkill', 'Skill', 'ExternalProfile', 'Student', 
-            'AcademicUnit', 'University', 'User'
+            'AcademicUnit', 'University', 'User', 'Company',
+            'UniversityDataRequest', 'StudentExtraData', 'Notification',
+            'StudentCoreSubject', 'UniversityFilter', 'Experience',
+            'Certification', 'SoftSkill'
         ];
 
-        // The transaction forces Prisma to use exactly ONE connection for all these commands
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0;');
-            
-            for (const table of tables) {
-                // DELETE clears the data without triggering DDL foreign key blocks
-                await tx.$executeRawUnsafe(`DELETE FROM \`${table}\`;`);
-                // ALTER TABLE resets the ID back to 1
-                await tx.$executeRawUnsafe(`ALTER TABLE \`${table}\` AUTO_INCREMENT = 1;`);
-            }
-            
-            await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1;');
-        });
+        // Transaction removed to avoid timeout issues
+        await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0;');
+        for (const table of tables) {
+            await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\`;`);
+            await prisma.$executeRawUnsafe(`ALTER TABLE \`${table}\` AUTO_INCREMENT = 1;`);
+        }
+        await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1;');
         console.log('Database cleaned and IDs reset.');
 
     // 2. CREATE USERS
     const password = await bcrypt.hash('password123', 10);
     
     const uniAdmin = await prisma.user.create({ data: { name: 'Admin', email: 'admin@uni.edu', password, role: 'UNIVERSITY' } });
-    const recruiter = await prisma.user.create({ data: { name: 'Recruiter', email: 'hr@techcorp.com', password, role: 'RECRUITER' } });
+    const techCorp = await prisma.company.create({ data: { name: 'TechCorp', industry: 'Technology' } });
+    const recruiter = await prisma.user.create({ data: { name: 'Recruiter', email: 'hr@techcorp.com', password, role: 'RECRUITER', companyId: techCorp.id } });
     const student1User = await prisma.user.create({ data: { name: 'Alice Smith', email: 'alice@student.edu', password, role: 'STUDENT' } });
     const student2User = await prisma.user.create({ data: { name: 'Bob Jones', email: 'bob@student.edu', password, role: 'STUDENT' } });
     const student3User = await prisma.user.create({ data: { name: 'Charlie Brown', email: 'charlie@student.edu', password, role: 'STUDENT' } });
@@ -121,6 +120,9 @@ async function main() {
             minCgpa: 8.0,
             maxBacklogs: 0,
             deadline: new Date('2026-12-31T23:59:59Z'),
+            companyId: techCorp.id,
+            approvalStatus: 'PENDING',
+            targetBranches: ["Computer Science"],
             skills: {
                 create: [
                     { skillId: reactSkill.id, priority: 'HIGH' },
@@ -137,6 +139,9 @@ async function main() {
             minCgpa: 5.0,
             maxBacklogs: 2,
             deadline: new Date('2026-12-31T23:59:59Z'),
+            companyId: techCorp.id,
+            approvalStatus: 'APPROVED',
+            targetBranches: ["Computer Science", "Information Technology"],
             skills: {
                 create: [
                     { skillId: nodeSkill.id, priority: 'HIGH' },

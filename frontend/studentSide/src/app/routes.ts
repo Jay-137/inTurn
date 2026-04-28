@@ -8,6 +8,7 @@ import { JobMatches } from "./components/job-matches";
 import { AppProviderLayout } from "./components/app-provider-layout";
 import { StudentAuthPage } from "./components/student-auth-page";
 import { StudentData } from "./components/student-data";
+import { ManageProfile } from "./components/manage-profile";
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +31,7 @@ export const router = createBrowserRouter([
           { index: true, Component: CandidateDashboard },
           { path: "link", Component: LinkSkillProof },
           { path: "profile", Component: SkillProfile },
+          { path: "manage-profile", Component: ManageProfile },
           { path: "placements", Component: JobMatches },
           { path: "data", Component: StudentData },
         ],

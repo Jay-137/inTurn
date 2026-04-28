@@ -66,6 +66,7 @@ export interface StudentProfilePayload {
   academicUnitId: number;
   cgpa: number;
   backlogCount: number;
+  passingYear?: number;
 }
 
 export interface StudentProfile {
@@ -76,6 +77,8 @@ export interface StudentProfile {
   registrationStatus: string;
   cgpa: number;
   backlogCount: number;
+  passingYear?: number;
+  branch?: string;
   placementStatus: string;
   user: { name: string; email: string };
   university: { name: string };
@@ -125,6 +128,7 @@ export interface StudentProfile {
       isRequired: boolean;
     };
   }>;
+  applications?: Application[];
   videoResumeUrl?: string;
 }
 
@@ -149,6 +153,7 @@ export interface Application {
   studentId: number;
   matchScore: number | null;
   status: string;
+  job?: Job;
 }
 
 export interface Notification {
@@ -193,6 +198,12 @@ export const studentApi = {
       body: JSON.stringify(payload),
     }),
 
+  updateAcademicProfile: (payload: Partial<StudentProfilePayload>) =>
+    request<{ message: string, student: StudentProfile }>("/students", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
   addExperience: (payload: any) =>
     request<{ message: string, experience: any }>("/students/experience", {
       method: "POST",
@@ -229,8 +240,24 @@ export const studentApi = {
       method: "PUT",
     }),
 
+  deleteNotification: (id: number) =>
+    request<{ message: string }>(`/students/notifications/${id}`, {
+      method: "DELETE",
+    }),
+
+  clearAllNotifications: () =>
+    request<{ message: string }>(`/students/notifications`, {
+      method: "DELETE",
+    }),
+
   getExtraDataRequests: () =>
     request<any[]>("/university/data-requests"),
+
+  getAcademicUnitTree: () =>
+    request<{ tree: any[] }>("/university/academic-units/tree"),
+
+  getDashboardStats: () =>
+    request<{ shortlistedCount: number; totalApplications: number; shortlistedApplications: Application[] }>("/students/dashboard-stats"),
 
   submitExtraData: (payload: { requestId: number, value: string, fileUrl?: string }) =>
     request<{ message: string }>("/university/students/extra-data", {
@@ -278,3 +305,29 @@ export const jobApi = {
 export const healthApi = {
   check: () => request<{ status: string; message: string }>("/health"),
 };
+
+export async function uploadVideoToCloudinary(file: File): Promise<string> {
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+  if (!cloudName || !uploadPreset) {
+    throw new Error("Cloudinary upload is not configured. Set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", uploadPreset);
+  formData.append("resource_type", "video");
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/video/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Cloudinary upload failed.");
+  }
+
+  return data.secure_url;
+}

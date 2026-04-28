@@ -11,6 +11,14 @@ router.put(
     universityController.approveStudent
 );
 
+// PUT /api/university/students/:studentId/reject
+router.put(
+    '/students/:studentId/reject',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.rejectStudent
+);
+
 // GET /api/university/students
 // Supports query params: ?academicUnitId=1 & ?placementStatus=PLACED
 router.get(
@@ -23,8 +31,8 @@ router.get(
 // GET /api/university/dashboard
 router.get(
     '/dashboard',
-    // authenticateToken, // For prototype, might be easier if we can fetch this or use dummy token
-    // requireRole(['UNIVERSITY']),
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
     universityController.getDashboardStats
 );
 
@@ -44,6 +52,27 @@ router.get(
 );
 
 router.get(
+    '/data-requests/submissions',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getExtraDataSubmissions
+);
+
+router.put(
+    '/data-requests/submissions/:id/status',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.updateExtraDataSubmissionStatus
+);
+
+router.delete(
+    '/data-requests/:id',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.deleteDataRequest
+);
+
+router.get(
     '/students/:studentId/extra-data',
     authenticateToken,
     requireRole(['UNIVERSITY', 'STUDENT']), // University checks, student views their own
@@ -57,5 +86,91 @@ router.post(
     requireRole(['STUDENT']),
     universityController.submitExtraData
 );
+
+// --- Applications, Companies, Jobs, Academic Units ---
+router.get(
+    '/applications',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getAllApplications
+);
+
+router.get(
+    '/companies',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getCompanies
+);
+
+router.get(
+    '/academic-units/tree',
+    authenticateToken,
+    requireRole(['UNIVERSITY', 'STUDENT']),
+    universityController.getAcademicUnitTree
+);
+
+router.post(
+    '/academic-units',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.createAcademicUnit
+);
+
+router.put(
+    '/academic-units/:id',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.updateAcademicUnit
+);
+
+router.delete(
+    '/academic-units/:id',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.deleteAcademicUnit
+);
+
+router.get(
+    '/jobs/pending',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getPendingJobs
+);
+
+router.put(
+    '/jobs/:jobId/status',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.updateJobStatus
+);
+
+router.get(
+    '/settings',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getSettings
+);
+
+router.put(
+    '/settings',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.updateSettings
+);
+
+router.get(
+    '/certifications',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getCertifications
+);
+
+router.put(
+    '/certifications/:id/verify',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.verifyCertification
+);
+
 
 module.exports = router;

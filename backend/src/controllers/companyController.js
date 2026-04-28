@@ -114,7 +114,7 @@ const getJobApplicants = async (req, res) => {
                     include: {
                         user: { select: { name: true, email: true } },
                         externalProfiles: true,
-                        skills: { include: { skill: true } }
+                        skills: { include: { skill: true } }, softSkills: true, certifications: true, experiences: true
                     }
                 }
             },
@@ -159,7 +159,7 @@ const getDashboardStats = async (req, res) => {
         // All Applications to these jobs
         const applications = await prisma.application.findMany({
             where: { jobId: { in: jobIds } },
-            include: { student: { include: { user: true } }, job: { select: { title: true } } }
+            include: { student: { include: { user: true, softSkills: true, certifications: true, experiences: true, skills: { include: { skill: true } } } }, job: { select: { title: true } } }
         });
 
         const totalApplicants = applications.length;
@@ -269,7 +269,7 @@ const getShortlistedCandidates = async (req, res) => {
                 matchScore: { gte: 75 } // Shortlisted threshold
             },
             include: {
-                student: { include: { user: true } },
+                student: { include: { user: true, softSkills: true, certifications: true, experiences: true, skills: { include: { skill: true } } } },
                 job: true
             },
             orderBy: { matchScore: 'desc' }

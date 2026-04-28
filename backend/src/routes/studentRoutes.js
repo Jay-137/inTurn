@@ -22,6 +22,10 @@ router.put(
 // --- Notifications ---
 router.get('/notifications', authenticateToken, studentController.getNotifications);
 router.put('/notifications/:id/read', authenticateToken, studentController.markNotificationRead);
+router.delete('/notifications/:id', authenticateToken, studentController.deleteNotification);
+router.delete('/notifications', authenticateToken, studentController.clearAllNotifications);
+
+router.get('/dashboard-stats', authenticateToken, requireRole(['STUDENT']), studentController.getDashboardStats);
 
 // GET /api/students/:userId -> View profile
 router.get(

@@ -4,11 +4,11 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Github, Code2, Trophy, CheckCircle2, Clock, ExternalLink,
   RefreshCw, AlertCircle, Plus, X, Link2, Briefcase, Award,
-  Heart, Video, Upload, Sparkles, GraduationCap, BookOpen,
-  Palette, GitBranch, Brain, Loader2
+  Heart, Video, Upload, GraduationCap, BookOpen, Loader2,
+  BarChart3
 } from "lucide-react";
-import { useState, useEffect, type ReactNode } from "react";
-import { studentApi } from "../../lib/api";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import { studentApi, uploadVideoToCloudinary } from "../../lib/api";
 import { toast } from "sonner";
 
 // ─── Tab config ──────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ const platforms: {
     color: "from-gray-800 to-gray-900",
     lightBg: "bg-gray-50",
     description: "Repositories, contributions, commit history & code quality",
-    metrics: ["245 contributions", "18 repositories", "12 stars received"],
+    metrics: ["Real stats load after verification"],
     exampleUsername: "github.com/username",
     urlPattern: "https://github.com/",
   },
@@ -51,7 +51,7 @@ const platforms: {
     color: "from-amber-500 to-orange-500",
     lightBg: "bg-amber-50",
     description: "Problem solving stats, contest ratings & difficulty breakdown",
-    metrics: ["342 problems solved", "Rating: 1847", "Top 8% globally"],
+    metrics: ["Real stats load after verification"],
     exampleUsername: "leetcode.com/u/username",
     urlPattern: "https://leetcode.com/u/",
   },
@@ -62,64 +62,9 @@ const platforms: {
     color: "from-blue-500 to-cyan-500",
     lightBg: "bg-blue-50",
     description: "Contest performance, rating trajectory & competitive coding",
-    metrics: ["Rating: 1523", "67 contests", "Specialist rank"],
+    metrics: ["Real stats load after verification"],
     exampleUsername: "codeforces.com/profile/username",
     urlPattern: "https://codeforces.com/profile/",
-  },
-  {
-    key: "kaggle",
-    name: "Kaggle",
-    icon: Brain,
-    color: "from-sky-500 to-blue-600",
-    lightBg: "bg-sky-50",
-    description: "Notebooks, competitions, datasets & ML expertise",
-    metrics: ["12 notebooks", "3 medals", "Expert tier"],
-    exampleUsername: "kaggle.com/username",
-    urlPattern: "https://www.kaggle.com/",
-  },
-  {
-    key: "figma",
-    name: "Figma",
-    icon: Palette,
-    color: "from-purple-500 to-pink-500",
-    lightBg: "bg-purple-50",
-    description: "Design projects, prototypes & UI/UX portfolio",
-    metrics: ["24 projects", "8 team files", "Pro member"],
-    exampleUsername: "figma.com/@username",
-    urlPattern: "https://www.figma.com/@",
-  },
-  {
-    key: "gitlab",
-    name: "GitLab",
-    icon: GitBranch,
-    color: "from-orange-500 to-red-500",
-    lightBg: "bg-orange-50",
-    description: "Repositories, merge requests, CI/CD pipelines & code reviews",
-    metrics: ["156 contributions", "9 repositories", "28 MRs merged"],
-    exampleUsername: "gitlab.com/username",
-    urlPattern: "https://gitlab.com/",
-  },
-  {
-    key: "codechef",
-    name: "CodeChef",
-    icon: Code2,
-    color: "from-yellow-600 to-amber-700",
-    lightBg: "bg-yellow-50",
-    description: "Contest ratings, problem solving & competitive programming",
-    metrics: ["Rating: 1756", "42 contests", "4★ coder"],
-    exampleUsername: "codechef.com/users/username",
-    urlPattern: "https://www.codechef.com/users/",
-  },
-  {
-    key: "hackerrank",
-    name: "HackerRank",
-    icon: Trophy,
-    color: "from-emerald-500 to-green-600",
-    lightBg: "bg-emerald-50",
-    description: "Skill badges, certifications & domain-specific challenges",
-    metrics: ["5 gold badges", "3 certifications", "Top 5%"],
-    exampleUsername: "hackerrank.com/profile/username",
-    urlPattern: "https://www.hackerrank.com/profile/",
   },
 ];
 
@@ -247,11 +192,13 @@ function PlatformsTab() {
   const [showSuccess, setShowSuccess] = useState<PlatformKey | null>(null);
   const [usernameInputs, setUsernameInputs] = useState<Record<string, string>>({});
   const [showInput, setShowInput] = useState<PlatformKey | null>(null);
+  const supportedPlatforms = platforms.filter((platform) => ["github", "leetcode", "codeforces"].includes(platform.key));
 
-  const getDynamicMetrics = (platformKey: string, isConnected: boolean, staticMetrics: string[]) => {
-    if (!isConnected || !studentProfile?.externalProfiles) return staticMetrics;
+  const getDynamicMetrics = (platformKey: string, isConnected: boolean) => {
+    if (!isConnected || !studentProfile?.externalProfiles) return ["Connect to load real stats"];
     const profile = studentProfile.externalProfiles.find(p => p.platform.toLowerCase() === platformKey);
-    if (!profile || !profile.stats) return staticMetrics;
+    if (!profile) return ["Connect to load real stats"];
+    if (!profile.stats) return ["Stats loading — reconnect if this persists"];
     const stats = profile.stats as any;
     
     switch (platformKey) {
@@ -259,7 +206,8 @@ function PlatformsTab() {
         return [
           `${stats.originalReposCount || stats.publicReposCount || 0} repositories`,
           `${stats.totalStars || 0} stars`,
-          `${stats.followers || 0} followers`
+          `${stats.followers || 0} followers`,
+          `${(stats.topLanguages || []).slice(0, 3).join(", ") || "No language data"}`
         ];
       case 'leetcode':
         return [
@@ -274,7 +222,7 @@ function PlatformsTab() {
           `Rank: ${stats.rank || 'N/A'}`
         ];
       default:
-        return staticMetrics;
+        return ["Stats unavailable from platform"];
     }
   };
 
@@ -345,8 +293,8 @@ function PlatformsTab() {
     }
   };
 
-  const linkedCount = Object.values(linkedPlatforms).filter(Boolean).length;
-  const totalPlatforms = platforms.length;
+  const linkedCount = supportedPlatforms.filter((platform) => linkedPlatforms[platform.key]).length;
+  const totalPlatforms = supportedPlatforms.length;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
@@ -380,7 +328,7 @@ function PlatformsTab() {
           </div>
         </div>
         <div className="flex gap-1.5">
-          {platforms.map((_, i) => (
+          {supportedPlatforms.map((_, i) => (
             <motion.div
               key={i}
               className={`h-2 flex-1 rounded-full ${i < linkedCount ? "bg-gradient-to-r from-indigo-500 to-purple-500" : "bg-gray-100"}`}
@@ -393,13 +341,13 @@ function PlatformsTab() {
         {linkedCount < 3 && (
           <div className="mt-3 flex items-center gap-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
             <AlertCircle className="w-3.5 h-3.5" />
-            Link at least 3 platforms for the most accurate skill profile
+            Link GitHub, LeetCode, and Codeforces for the most accurate skill profile
           </div>
         )}
       </Card>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {platforms.map((platform, idx) => {
+        {supportedPlatforms.map((platform, idx) => {
           const isConnected = linkedPlatforms[platform.key];
           const isConnecting = connecting === platform.key;
           const isShowingInput = showInput === platform.key;
@@ -424,10 +372,10 @@ function PlatformsTab() {
                       <>
                         <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
                           <ExternalLink className="w-3 h-3" />
-                          <span>{platform.urlPattern + (studentProfile?.externalProfiles?.find(p => p.platform.toLowerCase() === platform.key)?.url || "")}</span>
+                          <span>{platform.urlPattern}{studentProfile?.externalProfiles?.find(p => p.platform.toLowerCase() === platform.key)?.url || ""}</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5 mb-3">
-                          {getDynamicMetrics(platform.key, isConnected, platform.metrics).map((m) => (
+                          {getDynamicMetrics(platform.key, isConnected).map((m) => (
                             <span key={m} className={`text-xs px-2 py-0.5 rounded-full ${platform.lightBg} text-gray-700`}>{m}</span>
                           ))}
                         </div>
@@ -485,9 +433,36 @@ function PlatformsTab() {
             </motion.div>
           );
         })}
+
+        {[{name: 'HackerRank', icon: Code2, color: 'from-green-500 to-emerald-600', desc: 'Algorithm and data structure challenges'},
+          {name: 'CodeChef', icon: Trophy, color: 'from-amber-600 to-orange-700', desc: 'Competitive programming contests'},
+          {name: 'HackerEarth', icon: Code2, color: 'from-blue-600 to-indigo-600', desc: 'Enterprise hiring assessments and hackathons'},
+          {name: 'GeeksforGeeks', icon: BookOpen, color: 'from-emerald-600 to-teal-700', desc: 'Data structures, algorithms and interview prep'},
+          {name: 'Kaggle', icon: BarChart3, color: 'from-cyan-500 to-blue-500', desc: 'Data science competitions and datasets'}
+         ].map((platform, idx) => (
+          <motion.div key={platform.name} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: (supportedPlatforms.length + idx) * 0.05 }}>
+            <Card className="!p-0 overflow-hidden h-full opacity-60 hover:opacity-80 transition-opacity">
+              <div className="flex flex-col h-full">
+                <div className={`px-5 py-3.5 bg-gradient-to-r ${platform.color} grayscale-[30%] flex items-center gap-3`}>
+                  <platform.icon className="w-5 h-5 text-white" />
+                  <span className="text-white text-sm">{platform.name}</span>
+                  <Badge variant="warning" className="ml-auto"><Clock className="w-3 h-3 mr-1" /> Coming Soon</Badge>
+                </div>
+                <div className="p-5 flex-1 flex flex-col">
+                  <p className="text-xs text-muted-foreground mb-4">{platform.desc}</p>
+                  <div className="mt-auto">
+                    <button onClick={() => toast.info(`${platform.name} integration is coming soon!`)} className="w-full py-2 bg-gray-100 text-gray-500 text-xs rounded-lg font-medium hover:bg-gray-200 transition-colors cursor-pointer">
+                      Notify me when available
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
-      <div className="text-center py-2">
+      <div className="text-center py-4">
         <p className="text-xs text-muted-foreground">
           We only read public data from your profiles. Your accounts remain fully under your control.
         </p>
@@ -796,9 +771,13 @@ function SoftSkillsTab() {
   const initialSkills = studentProfile?.softSkills?.map(s => s.name) || [];
   const [selectedSkills, setSelectedSkills] = useState<string[]>(initialSkills);
   const [isSaving, setIsSaving] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [aiSkills, setAiSkills] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const visumeUploaded = !!studentProfile?.videoResumeUrl;
+
+  useEffect(() => {
+    setSelectedSkills(studentProfile?.softSkills?.map(s => s.name) || []);
+  }, [studentProfile?.softSkills]);
 
   const toggleSkill = (skill: string) =>
     setSelectedSkills((prev) => prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill]);
@@ -811,35 +790,40 @@ function SoftSkillsTab() {
         const p = await studentApi.getProfile(authUser.id);
         setStudentProfile(p);
       }
+      toast.success("Soft skills saved.");
     } catch (e) {
       console.error(e);
+      toast.error("Failed to save soft skills.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleVisumeUpload = async () => {
-    // In a real production app, you would use Cloudinary/S3 here.
-    // For this integration, we simulate the upload and save a real URL to the backend.
-    setAnalyzing(true);
+  const handleVisumeUpload = async (file: File) => {
+    if (!file.type.startsWith("video/")) {
+      toast.error("Please upload a video file.");
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error("Video must be 100MB or smaller.");
+      return;
+    }
+
+    setUploading(true);
     try {
-      // Simulate network delay for upload
-      await new Promise(r => setTimeout(r, 2000));
-      
-      const simulatedUrl = "https://res.cloudinary.com/demo/video/upload/dog.mp4";
-      await studentApi.updateProfile({ videoResumeUrl: simulatedUrl });
+      const videoUrl = await uploadVideoToCloudinary(file);
+      await studentApi.updateProfile({ videoResumeUrl: videoUrl });
       
       if (authUser) {
         const p = await studentApi.getProfile(authUser.id);
         setStudentProfile(p);
       }
-      
-      setAiSkills(["Confident Communication", "Clear Articulation", "Positive Body Language", "Structured Thinking"]);
+      toast.success("Visume uploaded.");
     } catch (e) {
       console.error(e);
-      toast.error("Failed to upload visume");
+      toast.error(e instanceof Error ? e.message : "Failed to upload visume");
     } finally {
-      setAnalyzing(false);
+      setUploading(false);
     }
   };
 
@@ -847,21 +831,33 @@ function SoftSkillsTab() {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <Card>
         <h3 className="text-gray-900 flex items-center gap-2 mb-2"><Video className="w-5 h-5 text-indigo-500" /> Visume (Video Resume)</h3>
-        <p className="text-sm text-muted-foreground mb-5">Upload a short video introduction (1-3 mins). Our AI analyzes your communication style and presentation skills.</p>
+        <p className="text-sm text-muted-foreground mb-5">Upload a short video introduction. It will be saved to your profile for recruiters to review.</p>
 
-        {!visumeUploaded && !analyzing ? (
-          <div onClick={handleVisumeUpload} className="border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-xl p-8 text-center cursor-pointer transition-colors group">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="video/mp4,video/quicktime,video/webm,video/*"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) handleVisumeUpload(file);
+            event.target.value = "";
+          }}
+        />
+
+        {!visumeUploaded && !uploading ? (
+          <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-xl p-8 text-center cursor-pointer transition-colors group">
             <div className="w-14 h-14 rounded-full bg-indigo-50 flex items-center justify-center mx-auto mb-3 group-hover:bg-indigo-100 transition-colors">
               <Upload className="w-6 h-6 text-indigo-500" />
             </div>
             <p className="text-sm text-gray-700 mb-1">Click to upload your visume</p>
-            <p className="text-xs text-gray-400">MP4, MOV, or WebM · Max 100MB</p>
+            <p className="text-xs text-gray-400">MP4, MOV, or WebM - Max 100MB</p>
           </div>
-        ) : analyzing ? (
+        ) : uploading ? (
           <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-8 text-center border border-indigo-200">
             <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mx-auto mb-3" />
-            <p className="text-sm text-indigo-700 mb-1">AI is analyzing your visume...</p>
-            <p className="text-xs text-indigo-500">Detecting communication patterns and presentation style</p>
+            <p className="text-sm text-indigo-700 mb-1">Uploading your visume...</p>
+            <p className="text-xs text-indigo-500">Saving the Cloudinary URL to your profile</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -870,30 +866,14 @@ function SoftSkillsTab() {
                 <Video className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1">
-                <p className="text-sm text-gray-900">visume_uploaded.mp4</p>
-                <p className="text-xs text-gray-500">Uploaded just now</p>
+                <p className="text-sm text-gray-900">Visume uploaded</p>
+                <a href={studentProfile?.videoResumeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:text-indigo-700">Open video</a>
               </div>
-              <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Analyzed</Badge>
+              <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Saved</Badge>
             </div>
-            {aiSkills.length > 0 && (
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-5 border border-indigo-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-4 h-4 text-indigo-600" />
-                  <span className="text-sm text-indigo-800">AI-Detected Soft Skills</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {aiSkills.map((skill) => (
-                    <motion.span key={skill} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="px-3 py-1.5 rounded-lg text-sm bg-white text-indigo-700 border border-indigo-200 flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3" />{skill}
-                    </motion.span>
-                  ))}
-                </div>
-              </div>
-            )}
             <button onClick={async () => {
               await studentApi.updateProfile({ videoResumeUrl: "" });
               if (authUser) setStudentProfile(await studentApi.getProfile(authUser.id));
-              setAiSkills([]);
             }} className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer">Remove visume</button>
           </div>
         )}

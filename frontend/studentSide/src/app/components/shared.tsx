@@ -8,6 +8,7 @@ export function GradientButton({
   size = "md",
   variant = "primary",
   type = "button",
+  disabled = false,
 }: {
   children: ReactNode;
   onClick?: (e?: any) => void;
@@ -15,6 +16,7 @@ export function GradientButton({
   size?: "sm" | "md" | "lg";
   variant?: "primary" | "outline" | "ghost";
   type?: "button" | "submit" | "reset";
+  disabled?: boolean;
 }) {
   const sizeClasses = {
     sm: "px-3 py-1.5 text-sm",
@@ -33,7 +35,8 @@ export function GradientButton({
       whileTap={{ scale: 0.98 }}
       type={type}
       onClick={onClick}
-      className={`rounded-xl transition-all duration-200 cursor-pointer ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
+      disabled={disabled}
+      className={`rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
     >
       {children}
     </motion.button>
@@ -101,9 +104,11 @@ export function ProgressBar({
 export function Badge({
   children,
   variant = "default",
+  className = "",
 }: {
   children: ReactNode;
   variant?: "default" | "success" | "warning" | "priority" | "info" | "neutral";
+  className?: string;
 }) {
   const variantClasses = {
     default: "bg-gray-100 text-gray-700",
@@ -115,7 +120,7 @@ export function Badge({
   };
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs ${variantClasses[variant]}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs ${variantClasses[variant]} ${className}`}>
       {children}
     </span>
   );

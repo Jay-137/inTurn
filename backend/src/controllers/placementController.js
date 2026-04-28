@@ -32,6 +32,11 @@ const selectCandidate = async (req, res) => {
             }
         });
 
+        await prisma.application.updateMany({
+            where: { jobId, studentId },
+            data: { status: 'SHORTLISTED' }
+        });
+
         res.status(201).json({ message: 'Candidate selected. Pending university approval.', selection });
     } catch (error) {
         console.error(error);

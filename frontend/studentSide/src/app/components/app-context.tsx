@@ -101,7 +101,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const updated = { ...defaultPlatforms };
         studentProfile.externalProfiles.forEach((p) => {
           const key = p.platform.toLowerCase() as PlatformKey;
-          if (updated.hasOwnProperty(key)) {
+          if (updated.hasOwnProperty(key) && p.isVerified !== false) {
             updated[key] = true;
           }
         });

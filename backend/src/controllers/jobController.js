@@ -12,7 +12,8 @@ const getJobs = async (req, res) => {
         // If a student is requesting, attach eligibility flags
         if (req.user && req.user.role === 'STUDENT') {
             const student = await prisma.student.findUnique({
-                where: { userId: req.user.id }
+                where: { userId: req.user.id },
+                include: { academicUnit: true }
             });
 
             if (student) {
@@ -48,7 +49,10 @@ const applyForJob = async (req, res) => {
         const jobId = parseInt(req.params.jobId, 10);
         const userId = req.user.id; 
 
-        const student = await prisma.student.findUnique({ where: { userId } });
+        const student = await prisma.student.findUnique({
+            where: { userId },
+            include: { academicUnit: true }
+        });
         if (!student) {
             return res.status(404).json({ error: 'Student profile not found.' });
         }
