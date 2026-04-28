@@ -5,6 +5,7 @@ import {
   SlidersHorizontal, Sparkles,
 } from "lucide-react";
 import { useTheme } from "./theme-context";
+import { AcademicUnitSelector } from "./academic-unit-selector";
 
 const steps = ["Job Details", "Eligibility Criteria", "Skill Requirements", "Review & Post"];
 
@@ -384,7 +385,14 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
               <MultiSelect label="Degree" options={["B.Tech", "M.Tech", "B.E.", "M.E.", "BCA", "MCA", "B.Sc", "M.Sc"]} selected={degrees} setSelected={setDegrees} dk={dk} />
             </div>
 
-            <MultiSelect label="Branches" options={["CSE", "IT", "ECE", "EEE", "ME", "CE", "AI/ML", "Data Science", "Cybersecurity"]} selected={branches} setSelected={setBranches} dk={dk} />
+            <AcademicUnitSelector
+              dk={dk}
+              label="Target Branches"
+              multi
+              excludeTypes={["Section"]}
+              selected={branches}
+              onSelect={(sel) => setBranches(sel.map(s => s.name))}
+            />
 
             <div>
               <label className={labelCls}>Backlogs Allowed</label>

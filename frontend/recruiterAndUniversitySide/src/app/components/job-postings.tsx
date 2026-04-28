@@ -1,8 +1,9 @@
 import { Plus, CheckCircle2, Clock, XCircle, Eye, MoreHorizontal, FileText } from "lucide-react";
 
-export function JobPostings({ dk, card, heading, muted, onNavigate, jobs }: {
+export function JobPostings({ dk, card, heading, muted, onNavigate, onWithdraw, jobs }: {
   dk: boolean; card: string; heading: string; muted: string;
   onNavigate: (id: string, meta?: any) => void;
+  onWithdraw?: (id: number) => void;
   jobs: any[];
 }) {
   const statusStyle = (s: string) => {
@@ -57,12 +58,20 @@ export function JobPostings({ dk, card, heading, muted, onNavigate, jobs }: {
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] px-2.5 py-1 rounded-full ${statusStyle(job.status)}`}>{statusLabel(job.status)}</span>
                   {job.status === "APPROVED" && (
-                    <button 
-                      onClick={() => onNavigate("job-applicants", { jobId: job.id, jobTitle: job.title })}
-                      className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${dk ? "border-white/10 hover:bg-white/5 text-gray-300" : "border-gray-200 hover:bg-gray-50 text-gray-700"}`}
-                    >
-                      <Eye className="w-3.5 h-3.5" /> View Applicants
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => onNavigate("job-applicants", { jobId: job.id, jobTitle: job.title })}
+                        className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${dk ? "border-white/10 hover:bg-white/5 text-gray-300" : "border-gray-200 hover:bg-gray-50 text-gray-700"}`}
+                      >
+                        <Eye className="w-3.5 h-3.5" /> View Applicants
+                      </button>
+                      <button 
+                        onClick={() => onWithdraw && onWithdraw(job.id)}
+                        className={`text-xs px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${dk ? "border-red-500/20 hover:bg-red-500/10 text-red-400" : "border-red-200 hover:bg-red-50 text-red-600"}`}
+                      >
+                        <XCircle className="w-3.5 h-3.5" /> Withdraw
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

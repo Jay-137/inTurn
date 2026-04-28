@@ -1,6 +1,7 @@
 import { useTheme } from "./theme-context";
 import { useState, useEffect } from "react";
 import { Search, Filter, Download, Star, BarChart3, TrendingUp, Users, CheckCircle2, Play, X, Video, ArrowLeft, Loader2, FileText, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 
 const API_BASE = "http://localhost:3000/api";
 function getToken() { return localStorage.getItem("token") || ""; }
@@ -22,6 +23,11 @@ export function JobApplicants({ jobId, onBack }: { jobId: number; onBack: () => 
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<any>(null);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("ALL");
+  const [sortBy, setSortBy] = useState("match_desc");
+  const [minMatch, setMinMatch] = useState("");
+  const [selectedApps, setSelectedApps] = useState<number[]>([]);
 
   const fetchApplicants = async () => {
     setLoading(true);
@@ -63,6 +69,55 @@ export function JobApplicants({ jobId, onBack }: { jobId: number; onBack: () => 
     return "Forwarded";
   };
 
+  const filteredApplicants = applicants
+    .filter(a => {
+      if (filter !== "ALL" && a.status !== filter) return false;
+      if (minMatch && Math.round(a.matchScore || 0) < Number(minMatch)) return false;
+      if (search) {
+        const term = search.toLowerCase();
+        const name = a.student?.user?.name?.toLowerCase() || "";
+        const branch = a.student?.academicUnit?.name?.toLowerCase() || "";
+        if (!name.includes(term) && !branch.includes(term)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "match_desc") return (b.matchScore || 0) - (a.matchScore || 0);
+      if (sortBy === "match_asc") return (a.matchScore || 0) - (b.matchScore || 0);
+      if (sortBy === "name_asc") return (a.student?.user?.name || "").localeCompare(b.student?.user?.name || "");
+      return 0;
+    });
+
+  const toggleSelectAll = () => {
+    const forwardable = filteredApplicants.filter(a => a.status === "FORWARDED_TO_RECRUITER");
+    if (selectedApps.length === forwardable.length && selectedApps.length > 0) {
+      setSelectedApps([]);
+    } else {
+      setSelectedApps(forwardable.map(a => a.id));
+    }
+  };
+
+  const handleMassShortlist = async () => {
+    if (selectedApps.length === 0) return;
+    try {
+      const res = await fetch(`${API_BASE}/companies/jobs/applications/bulk`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ applicationIds: selectedApps, status: "SHORTLISTED_BY_RECRUITER" })
+      });
+      if (res.ok) {
+        toast.success(`Successfully shortlisted ${selectedApps.length} applicants!`);
+        setSelectedApps([]);
+        fetchApplicants();
+      } else {
+        toast.error("Failed to shortlist applicants.");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("An error occurred.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -76,6 +131,43 @@ export function JobApplicants({ jobId, onBack }: { jobId: number; onBack: () => 
       </div>
 
       <div className={card}>
+        <div className="flex justify-between items-center mb-6">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+            <Search className="w-4 h-4" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or branch..." className="bg-transparent outline-none w-64" />
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <select value={filter} onChange={(e) => setFilter(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="ALL">All Statuses</option>
+              <option value="FORWARDED_TO_RECRUITER">Forwarded</option>
+              <option value="SHORTLISTED_BY_RECRUITER">Shortlisted</option>
+              <option value="REJECTED_BY_RECRUITER">Rejected</option>
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="match_desc">Match Score ↓</option>
+              <option value="match_asc">Match Score ↑</option>
+              <option value="name_asc">Name A-Z</option>
+            </select>
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-sm ${dk ? "border-white/10" : "border-gray-300"}`}>
+              <span className={`text-xs whitespace-nowrap ${dk ? "text-gray-400" : "text-gray-500"}`}>Min:</span>
+              <select value={["50","60","70","80","90"].includes(minMatch) ? minMatch : ""} onChange={(e) => setMinMatch(e.target.value)} className={`text-xs bg-transparent outline-none ${dk ? "text-white" : "text-gray-900"}`}>
+                <option value="">Any</option>
+                <option value="50">≥50%</option>
+                <option value="60">≥60%</option>
+                <option value="70">≥70%</option>
+                <option value="80">≥80%</option>
+                <option value="90">≥90%</option>
+              </select>
+              <input type="number" min="0" max="100" placeholder="custom" value={["50","60","70","80","90",""].includes(minMatch) ? "" : minMatch} onChange={(e) => setMinMatch(e.target.value)} className={`w-12 text-xs bg-transparent outline-none text-center ${dk ? "text-white placeholder:text-gray-600" : "text-gray-900 placeholder:text-gray-400"}`} />
+            </div>
+            {selectedApps.length > 0 && (
+              <button onClick={handleMassShortlist} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+                Shortlist Selected ({selectedApps.length})
+              </button>
+            )}
+          </div>
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -90,6 +182,14 @@ export function JobApplicants({ jobId, onBack }: { jobId: number; onBack: () => 
           <table className="w-full">
             <thead>
               <tr>
+                <th className={`${tableTh} w-10`}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedApps.length > 0 && selectedApps.length === filteredApplicants.filter(a => a.status === "FORWARDED_TO_RECRUITER").length}
+                    onChange={toggleSelectAll}
+                    className="rounded border-gray-300"
+                  />
+                </th>
                 <th className={tableTh}>Candidate</th>
                 <th className={tableTh}>Branch</th>
                 <th className={tableTh}>Match Score</th>
@@ -99,8 +199,21 @@ export function JobApplicants({ jobId, onBack }: { jobId: number; onBack: () => 
               </tr>
             </thead>
             <tbody>
-              {applicants.map((a) => (
+              {filteredApplicants.map((a) => (
                 <tr key={a.id}>
+                  <td className={tableTd}>
+                    {a.status === "FORWARDED_TO_RECRUITER" && (
+                      <input 
+                        type="checkbox" 
+                        checked={selectedApps.includes(a.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedApps([...selectedApps, a.id]);
+                          else setSelectedApps(selectedApps.filter(id => id !== a.id));
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                    )}
+                  </td>
                   <td className={tableTd}>
                     <button onClick={() => setSelected(a)} className="text-left hover:underline">
                       {a.student?.user?.name || "—"}
@@ -221,6 +334,9 @@ export function Shortlisted() {
   const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("match_desc");
+  const [minMatch, setMinMatch] = useState("");
 
   useEffect(() => {
     const fetchShortlisted = async () => {
@@ -237,23 +353,80 @@ export function Shortlisted() {
     fetchShortlisted();
   }, []);
 
+  const filteredCandidates = candidates
+    .filter(c => {
+      if (minMatch && (c.score || 0) < Number(minMatch)) return false;
+      if (search) {
+        const term = search.toLowerCase();
+        if (!(c.name?.toLowerCase().includes(term) || c.role?.toLowerCase().includes(term) || c.branch?.toLowerCase().includes(term))) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "match_desc") return (b.score || 0) - (a.score || 0);
+      if (sortBy === "match_asc") return (a.score || 0) - (b.score || 0);
+      if (sortBy === "name_asc") return (a.name || "").localeCompare(b.name || "");
+      return 0;
+    });
+
+  const handleExportCSV = () => {
+    if (filteredCandidates.length === 0) return;
+    const headers = ["Name", "Role Applied", "Branch", "Match Score"];
+    const rows = filteredCandidates.map(c => [c.name, c.role, c.branch, `${c.score}%`]);
+    const csv = [headers.join(","), ...rows.map(r => r.map((v: string) => `"${(v || "").replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "shortlisted_candidates.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className={`text-2xl tracking-tight ${heading}`}>Shortlisted Candidates</h1>
-          <p className={`text-sm mt-1 ${muted}`}>{candidates.length} candidates shortlisted by your team.</p>
+          <p className={`text-sm mt-1 ${muted}`}>{filteredCandidates.length} candidates shortlisted by your team.</p>
         </div>
-        <button className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "border-white/10 hover:bg-white/5 text-gray-300" : "border-gray-200 hover:bg-gray-50 text-gray-700"}`}>
+        <button onClick={handleExportCSV} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "border-white/10 hover:bg-white/5 text-gray-300" : "border-gray-200 hover:bg-gray-50 text-gray-700"}`}>
           <Download className="w-4 h-4" /> Export CSV
         </button>
       </div>
 
       <div className={card}>
-        {candidates.length === 0 ? (
+        {/* Search + Sort + Filter toolbar */}
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+            <Search className="w-4 h-4" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search candidate, role, branch..." className="bg-transparent outline-none w-64" />
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="match_desc">Match Score ↓</option>
+              <option value="match_asc">Match Score ↑</option>
+              <option value="name_asc">Name A-Z</option>
+            </select>
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-sm ${dk ? "border-white/10" : "border-gray-300"}`}>
+              <span className={`text-xs whitespace-nowrap ${dk ? "text-gray-400" : "text-gray-500"}`}>Min:</span>
+              <select value={["50","60","70","80","90"].includes(minMatch) ? minMatch : ""} onChange={(e) => setMinMatch(e.target.value)} className={`text-xs bg-transparent outline-none ${dk ? "text-white" : "text-gray-900"}`}>
+                <option value="">Any</option>
+                <option value="50">≥50%</option>
+                <option value="60">≥60%</option>
+                <option value="70">≥70%</option>
+                <option value="80">≥80%</option>
+                <option value="90">≥90%</option>
+              </select>
+              <input type="number" min="0" max="100" placeholder="custom" value={["50","60","70","80","90",""].includes(minMatch) ? "" : minMatch} onChange={(e) => setMinMatch(e.target.value)} className={`w-12 text-xs bg-transparent outline-none text-center ${dk ? "text-white placeholder:text-gray-600" : "text-gray-900 placeholder:text-gray-400"}`} />
+            </div>
+          </div>
+        </div>
+
+        {filteredCandidates.length === 0 ? (
           <div className="text-center py-12">
             <Star className={`w-8 h-8 mx-auto mb-3 ${muted}`} />
-            <p className={muted}>No shortlisted candidates yet. Review applicants from your job postings to shortlist them.</p>
+            <p className={muted}>{search || minMatch ? "No candidates match the current filters." : "No shortlisted candidates yet. Review applicants from your job postings to shortlist them."}</p>
           </div>
         ) : (
           <table className="w-full">
@@ -268,7 +441,7 @@ export function Shortlisted() {
               </tr>
             </thead>
             <tbody>
-              {candidates.map((c, i) => (
+              {filteredCandidates.map((c, i) => (
                 <tr key={i}>
                   <td className={tableTd}>{c.name}</td>
                   <td className={tableTd}>{c.role}</td>
@@ -339,20 +512,19 @@ export function PlacementAnalytics() {
   const { theme } = useTheme();
   const dk = theme === "dark";
   const { card, heading, muted } = getStyles(dk);
-  const [stats, setStats] = useState({ totalApplicants: 0, shortlistRate: 0, offersExtended: 0 });
+  const [stats, setStats] = useState({ totalApplicants: 0, shortlistRate: 0, offersExtended: 0, funnel: { totalApplicants: 0, shortlistedCount: 0, placedCount: 0 } });
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch(`${API_BASE}/companies/dashboard`, {
-          headers: { Authorization: `Bearer ${getToken()}` }
-        });
+        const res = await fetch("http://localhost:3000/api/companies/dashboard", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
         if (res.ok) {
           const data = await res.json();
-          const totalApps = parseInt(data.summaryCards.find((c: any) => c.label === "Total Applicants")?.value || "0");
-          const shortlisted = parseInt(data.summaryCards.find((c: any) => c.label === "Shortlisted")?.value || "0");
+          const funnel = data.funnel || { totalApplicants: 0, shortlistedCount: 0, placedCount: 0 };
+          const totalApps = funnel.totalApplicants;
+          const shortlisted = funnel.shortlistedCount;
           const rate = totalApps > 0 ? Math.round((shortlisted / totalApps) * 100) : 0;
-          setStats({ totalApplicants: totalApps, shortlistRate: rate, offersExtended: 0 });
+          setStats({ totalApplicants: totalApps, shortlistRate: rate, offersExtended: funnel.placedCount, funnel });
         }
       } catch (error) { console.error(error); }
     };
@@ -385,9 +557,55 @@ export function PlacementAnalytics() {
           </div>
         </div>
       </div>
-      <div className={`h-80 rounded-xl border border-dashed flex flex-col items-center justify-center gap-3 ${dk ? "border-white/20 text-gray-500" : "border-gray-300 text-gray-400"}`}>
-        <BarChart3 className="w-8 h-8 opacity-50" />
-        <p>Hiring funnel and historical data charts will appear here.</p>
+      <div className={`${card} p-6`}>
+        <h3 className={`text-sm font-medium mb-6 ${heading}`}>Hiring Funnel</h3>
+        {stats.funnel.totalApplicants === 0 ? (
+          <div className={`rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-3 py-12 ${dk ? "border-white/10 text-gray-600" : "border-gray-200 text-gray-400"}`}>
+            <BarChart3 className="w-10 h-10 opacity-30" />
+            <p className="text-sm">No applicant data yet</p>
+            <p className={`text-xs ${muted}`}>Funnel will appear once applicants are received</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 max-w-2xl mx-auto">
+            {/* Total Applicants */}
+            <div className="relative">
+              <div className="h-14 w-full rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-600 flex items-center justify-between px-4 shadow-sm">
+                <span className="text-white font-medium text-sm">Total Applicants</span>
+                <span className="text-white font-bold text-lg">{stats.funnel.totalApplicants} <span className="text-xs font-normal opacity-80">(100%)</span></span>
+              </div>
+            </div>
+            {/* Shortlisted */}
+            <div className="relative">
+              <div
+                className="h-14 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 flex items-center justify-between px-4 shadow-sm transition-all duration-700"
+                style={{ width: `${Math.max((stats.funnel.shortlistedCount / stats.funnel.totalApplicants) * 100, 20)}%` }}
+              >
+                <span className="text-white font-medium text-sm whitespace-nowrap">Shortlisted</span>
+                <span className="text-white font-bold text-lg">
+                  {stats.funnel.shortlistedCount} 
+                  <span className="text-xs font-normal opacity-80 ml-1">
+                    ({stats.funnel.totalApplicants > 0 ? Math.round((stats.funnel.shortlistedCount / stats.funnel.totalApplicants) * 100) : 0}%)
+                  </span>
+                </span>
+              </div>
+            </div>
+            {/* Placed / Offers */}
+            <div className="relative">
+              <div
+                className="h-14 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-between px-4 shadow-sm transition-all duration-700"
+                style={{ width: `${Math.max((stats.funnel.placedCount / stats.funnel.totalApplicants) * 100, 15)}%` }}
+              >
+                <span className="text-white font-medium text-sm whitespace-nowrap">Placed</span>
+                <span className="text-white font-bold text-lg">
+                  {stats.funnel.placedCount}
+                  <span className="text-xs font-normal opacity-80 ml-1">
+                    ({stats.funnel.totalApplicants > 0 ? Math.round((stats.funnel.placedCount / stats.funnel.totalApplicants) * 100) : 0}%)
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

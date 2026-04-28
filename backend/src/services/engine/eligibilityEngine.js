@@ -407,10 +407,89 @@ const evaluateEligibility = async (student, job, universityFilter = null) => {
         feedback.push(`Backlogs (${student.backlogCount}) exceed the maximum allowed (${job.maxBacklogs})`);
     }
 
-    // 2. Branch and Year Checks
+    // 2. Branch and Year Checks (with hierarchical cascade)
     if (job.targetBranches && Array.isArray(job.targetBranches) && job.targetBranches.length > 0) {
         const studentBranch = student.branch || student.academicUnit?.name;
-        if (!studentBranch || !job.targetBranches.some((targetBranch) => branchesMatch(studentBranch, targetBranch))) {
+        
+        // Build a list of names to check: the student's own branch/unit name,
+        // PLUS all ancestor unit names (parent, grandparent, etc.)
+        const namesToCheck = [];
+        if (studentBranch) namesToCheck.push(studentBranch);
+        
+        // Walk up the academic unit hierarchy to collect all ancestor names
+        if (student.academicUnitId) {
+            try {
+                let currentUnitId = student.academicUnitId;
+                const visited = new Set();
+                while (currentUnitId && !visited.has(currentUnitId)) {
+                    visited.add(currentUnitId);
+                    const unit = await prisma.academicUnit.findUnique({
+                        where: { id: currentUnitId },
+                        select: { id: true, name: true, parentId: true }
+                    });
+                    if (!unit) break;
+                    if (!namesToCheck.includes(unit.name)) {
+                        namesToCheck.push(unit.name);
+                    }
+                    currentUnitId = unit.parentId;
+                }
+            } catch (e) {
+                // If hierarchy lookup fails, continue with what we have
+            }
+        }
+        
+        // Also check the reverse: if targetBranch is a parent unit name, 
+        // the student in a child unit should match. We also need to check
+        // if any target branch name matches any ancestor of the student.
+        // Additionally, walk DOWN from each target branch to see if the
+        // student's unit is a descendant.
+        let branchMatch = false;
+        
+        // Check if any of the student's unit names (self + ancestors) match any target branch
+        for (const name of namesToCheck) {
+            if (job.targetBranches.some((tb) => branchesMatch(name, tb))) {
+                branchMatch = true;
+                break;
+            }
+        }
+        
+        // If no direct/ancestor match, check if any target branch is an ancestor
+        // of the student's unit (i.e., target is a parent node containing the student)
+        if (!branchMatch && student.academicUnitId) {
+            try {
+                // For each target branch name, find if there's an academic unit with that name
+                // and check if the student's unit is a descendant of it
+                const allUnits = await prisma.academicUnit.findMany({
+                    select: { id: true, name: true, parentId: true }
+                });
+                const unitMap = new Map(allUnits.map(u => [u.id, u]));
+                
+                for (const targetBranch of job.targetBranches) {
+                    // Find units whose name matches the target branch
+                    const matchingTargetUnits = allUnits.filter(u => branchesMatch(u.name, targetBranch));
+                    for (const targetUnit of matchingTargetUnits) {
+                        // Check if student's unit is a descendant of this target unit
+                        let checkId = student.academicUnitId;
+                        const visited = new Set();
+                        while (checkId && !visited.has(checkId)) {
+                            visited.add(checkId);
+                            if (checkId === targetUnit.id) {
+                                branchMatch = true;
+                                break;
+                            }
+                            const parentUnit = unitMap.get(checkId);
+                            checkId = parentUnit?.parentId || null;
+                        }
+                        if (branchMatch) break;
+                    }
+                    if (branchMatch) break;
+                }
+            } catch (e) {
+                // If descendant check fails, continue
+            }
+        }
+        
+        if (!branchMatch) {
             isEligible = false;
             feedback.push(`Your branch (${studentBranch || 'Not set'}) is not eligible. Target branches: ${job.targetBranches.join(', ')}`);
         }

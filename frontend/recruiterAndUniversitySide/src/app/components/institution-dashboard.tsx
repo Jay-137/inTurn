@@ -432,7 +432,7 @@ export function InstitutionDashboard() {
           <div className={`${card} p-6`}>
             <div className="flex items-center justify-between mb-4">
               <h2 className={`text-sm ${heading}`}>Active Jobs Overview</h2>
-              <button className="text-xs text-blue-600 hover:text-blue-500 transition-colors">View all</button>
+              <button onClick={() => setActiveNav("jobs-all")} className="text-xs text-blue-600 hover:text-blue-500 transition-colors cursor-pointer">View all</button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

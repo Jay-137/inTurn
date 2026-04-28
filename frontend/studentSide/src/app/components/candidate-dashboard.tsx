@@ -34,6 +34,7 @@ import {
   BookOpen,
   Award,
   Loader2,
+  ShieldCheck,
 } from "lucide-react";
 import { studentApi, jobApi, type StudentProfile, type Job } from "../../lib/api";
 
@@ -239,6 +240,8 @@ export function CandidateDashboard() {
     }
   ];
 
+  const isPlaced = studentProfile?.placementStatus === 'PLACED';
+
   if (loadingProfile) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -274,6 +277,24 @@ export function CandidateDashboard() {
         </motion.div>
       )}
 
+      {/* Placed Banner */}
+      {isPlaced && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 flex items-start gap-4"
+        >
+          <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-emerald-900">Congratulations! You have been placed.</p>
+            <p className="text-xs text-emerald-700 mt-1">
+              Your placement has been confirmed by your university. Job applications have been disabled. 
+              Contact your placement cell if you have any questions.
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       {/* Welcome banner */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -293,20 +314,26 @@ export function CandidateDashboard() {
             Welcome back, {authUser?.name || "Student"}!
           </h2>
           <p className="text-indigo-100 text-sm mb-4">
-            You have{" "}
-            <span className="text-white">
-              {shortlistedCount} shortlisted opportunities
-            </span>{" "}
-            accepted by recruiters for the next stage.
+            {isPlaced ? (
+              <>Your placement has been confirmed. Best of luck with your new role!</>
+            ) : (
+              <>You have{" "}
+              <span className="text-white">
+                {shortlistedCount} shortlisted opportunities
+              </span>{" "}
+              accepted by recruiters for the next stage.</>
+            )}
           </p>
-          <GradientButton
-            className="!bg-white !text-indigo-700 !shadow-none"
-            size="sm"
-            onClick={() => navigate("/student/placements")}
-          >
-            View Shortlisted Roles{" "}
-            <ArrowRight className="w-4 h-4 inline ml-1" />
-          </GradientButton>
+          {!isPlaced && (
+            <GradientButton
+              className="!bg-white !text-indigo-700 !shadow-none"
+              size="sm"
+              onClick={() => navigate("/student/placements")}
+            >
+              View Shortlisted Roles{" "}
+              <ArrowRight className="w-4 h-4 inline ml-1" />
+            </GradientButton>
+          )}
         </div>
       </motion.div>
 

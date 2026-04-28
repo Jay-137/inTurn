@@ -39,7 +39,13 @@ function DonutChart({ data, size, strokeWidth }: { data: { name: string; value: 
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {data.map((segment) => {
+      {total === 0 ? (
+        <circle
+          cx={size / 2} cy={size / 2} r={radius}
+          fill="none" stroke="currentColor" strokeWidth={strokeWidth}
+          className="text-gray-200 dark:text-gray-700" strokeOpacity={0.3}
+        />
+      ) : data.map((segment) => {
         const pct = segment.value / total;
         const dashLength = pct * circumference;
         const gap = circumference - dashLength;
@@ -190,6 +196,46 @@ export function RecruiterDashboard() {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [selectedJobTitle, setSelectedJobTitle] = useState<string>("");
+  const [showNotif, setShowNotif] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch("http://localhost:3000/api/companies/notifications", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.notifications || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const markRead = async (id: number) => {
+    try {
+      await fetch(`http://localhost:3000/api/companies/notifications/${id}/read`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+      });
+      fetchNotifications();
+    } catch (e) { console.error(e); }
+  };
+
+  const clearAllNotifications = async () => {
+    try {
+      await fetch(`http://localhost:3000/api/companies/notifications`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+      });
+      fetchNotifications();
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -247,10 +293,46 @@ export function RecruiterDashboard() {
               <button onClick={toggle} className={`p-2 rounded-lg transition-colors ${dk ? "hover:bg-white/5" : "hover:bg-gray-100"}`}>
                 {dk ? <Sun className="w-4 h-4 text-gray-400" /> : <Moon className="w-4 h-4 text-gray-500" />}
               </button>
-              <button className={`relative p-2 rounded-lg transition-colors ${dk ? "hover:bg-white/5" : "hover:bg-gray-100"}`}>
-                <Bell className={`w-4 h-4 ${dk ? "text-gray-400" : "text-gray-500"}`} />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
-              </button>
+              <div className="relative">
+                <button onClick={() => setShowNotif(!showNotif)} className={`relative p-2 rounded-lg transition-colors cursor-pointer ${dk ? "hover:bg-white/5" : "hover:bg-gray-100"}`}>
+                  <Bell className={`w-4 h-4 ${dk ? "text-gray-400" : "text-gray-500"}`} />
+                  {notifications.some(n => !n.isRead) && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+                  )}
+                </button>
+                {showNotif && (
+                  <div className={`absolute right-0 top-12 w-80 max-h-[400px] overflow-y-auto rounded-xl shadow-xl border p-4 z-50 ${dk ? "bg-[#111116] border-white/10" : "bg-white border-gray-200"}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className={`text-sm font-medium ${heading}`}>Notifications</p>
+                      {notifications.length > 0 && (
+                        <button onClick={clearAllNotifications} className="text-xs text-blue-500 hover:text-blue-600">Clear all</button>
+                      )}
+                    </div>
+                    {notifications.length > 0 ? (
+                      <div className="space-y-2">
+                        {notifications.map(n => (
+                          <div 
+                            key={n.id}
+                            onClick={() => !n.isRead && markRead(n.id)}
+                            className={`p-3 rounded-lg text-xs cursor-pointer transition-colors border ${
+                              n.isRead ? (dk ? "bg-white/5 border-transparent text-gray-400" : "bg-gray-50 border-transparent text-gray-500")
+                                : (dk ? "bg-blue-500/10 border-blue-500/20 text-blue-100" : "bg-blue-50 border-blue-100 text-blue-900")
+                            }`}
+                          >
+                            <p className="font-medium mb-1">{n.type === "success" ? "Success" : n.type === "warning" ? "Notice" : "Update"}</p>
+                            <p className="opacity-80 leading-relaxed">{n.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6">
+                        <Bell className={`w-8 h-8 mx-auto mb-2 opacity-20 ${dk ? "text-white" : "text-gray-900"}`} />
+                        <p className={`text-xs ${muted}`}>No new notifications right now.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               <button onClick={() => { setActiveNav("post-job"); }} className="flex items-center gap-2 bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">Post New Job</span>
@@ -263,13 +345,29 @@ export function RecruiterDashboard() {
           {activeNav === "post-job" ? (
             <PostJob onNavigate={setActiveNav} />
           ) : activeNav === "job-postings" ? (
-            <JobPostings dk={dk} card={card} heading={heading} muted={muted} jobs={dashboardData?.activeJobs || []} onNavigate={(id, meta) => {
-              if (id === "job-applicants" && meta?.jobId) {
-                setSelectedJobId(meta.jobId);
-                setSelectedJobTitle(meta.jobTitle || "");
-              }
-              setActiveNav(id);
-            }} />
+            <JobPostings 
+              dk={dk} card={card} heading={heading} muted={muted} 
+              jobs={dashboardData?.activeJobs || []} 
+              onNavigate={(id, meta) => {
+                if (id === "job-applicants" && meta?.jobId) {
+                  setSelectedJobId(meta.jobId);
+                  setSelectedJobTitle(meta.jobTitle || "");
+                }
+                setActiveNav(id);
+              }} 
+              onWithdraw={async (jobId) => {
+                try {
+                  const res = await fetch(`http://localhost:3000/api/companies/jobs/${jobId}/withdraw`, {
+                    method: 'PUT',
+                    headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+                  });
+                  if (res.ok) {
+                    const dRes = await fetch("http://localhost:3000/api/companies/dashboard", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+                    if (dRes.ok) setDashboardData(await dRes.json());
+                  }
+                } catch (e) { console.error(e); }
+              }}
+            />
           ) : activeNav === "job-applicants" && selectedJobId ? (
             <JobApplicants jobId={selectedJobId} onBack={() => setActiveNav("job-postings")} />
           ) : activeNav === "shortlisted" ? (
@@ -280,11 +378,11 @@ export function RecruiterDashboard() {
           <>
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {(dashboardData?.summaryCards || []).map((c: any) => {
+            {(dashboardData?.summaryCards || []).map((c: any, i: number) => {
               const cl = colorMap[c.color] || colorMap.blue;
               const IconComp = c.label.includes("Job") ? Briefcase : c.label.includes("App") ? Users : c.label.includes("Short") ? UserCheck : TrendingUp;
               return (
-                <div key={c.label} className={`${card} p-5`}>
+                <div key={c.label} className={`${card} p-5 animate-fade-in-up hover-lift`} style={{ animationDelay: `${i * 50}ms` }}>
                   <div className="flex items-center justify-between mb-3">
                     <p className={`text-xs ${muted}`}>{c.label}</p>
                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${dk ? cl.bgDk : cl.bg}`}>
@@ -301,10 +399,10 @@ export function RecruiterDashboard() {
           {/* Active Jobs + Application Status */}
           <div className="grid lg:grid-cols-5 gap-6">
             {/* Active Job Posts */}
-            <div className={`lg:col-span-3 ${card} p-6`}>
+            <div className={`lg:col-span-3 ${card} p-6 animate-fade-in-up`}>
               <div className="flex items-center justify-between mb-5">
                 <h2 className={`text-sm ${heading}`}>Active Job Posts</h2>
-                <button className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-500 transition-colors">
+                <button onClick={() => setActiveNav("post-job")} className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-500 transition-colors cursor-pointer">
                   <Plus className="w-3.5 h-3.5" />
                   New Post
                 </button>
@@ -361,7 +459,7 @@ export function RecruiterDashboard() {
             {/* Right column: Application Status + Recent Applicants */}
             <div className="lg:col-span-2 space-y-6">
               {/* Application Status Donut */}
-              <div className={`${card} p-6`}>
+              <div className={`${card} p-6 animate-fade-in-up`}>
                 <h2 className={`text-sm mb-2 ${heading}`}>Application Status</h2>
                 <div className="flex items-center justify-center py-6">
                   <DonutChart data={dashboardData?.applicationStatus || []} size={160} strokeWidth={22} />
@@ -377,10 +475,10 @@ export function RecruiterDashboard() {
               </div>
 
               {/* Recent Applicants */}
-              <div className={`${card} p-6`}>
+              <div className={`${card} p-6 animate-fade-in-up`}>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className={`text-sm ${heading}`}>Recent Applicants</h2>
-                  <button className="text-xs text-blue-600 hover:text-blue-500 transition-colors">View All</button>
+                  <button onClick={() => setActiveNav("shortlisted")} className="text-xs text-blue-600 hover:text-blue-500 transition-colors cursor-pointer">View All</button>
                 </div>
                 <div className="space-y-3">
                   {(dashboardData?.recentApplicants || []).map((a: any) => (
@@ -409,7 +507,7 @@ export function RecruiterDashboard() {
           </div>
 
           {/* Application Trend */}
-          <div className={`${card} p-6`}>
+          <div className={`${card} p-6 animate-fade-in-up`}>
             <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
               <div className="flex items-center gap-2">
                 <BarChart3 className={`w-4 h-4 ${dk ? "text-blue-400" : "text-blue-600"}`} />

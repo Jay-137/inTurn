@@ -32,6 +32,15 @@ const getJobs = async (req, res) => {
                 const enhancedJobs = [];
                 for (const job of jobs) {
                     const eligibility = await evaluateEligibility(student, job, uniFilter);
+                    
+                    // Override eligibility if placed
+                    if (student.placementStatus === 'PLACED') {
+                        eligibility.isEligible = false;
+                        if (!eligibility.feedback.includes('You are already placed.')) {
+                            eligibility.feedback.push('You are already placed and cannot apply for new jobs.');
+                        }
+                    }
+
                     enhancedJobs.push({
                         ...job,
                         // Show university deadline to students if set (earlier cutoff)

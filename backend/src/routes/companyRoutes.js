@@ -1,5 +1,10 @@
 const express = require('express');
-const { getCompanyProfile, postJob, getJobApplicants, getDashboardStats, getShortlistedCandidates, updateApplicantStatus } = require('../controllers/companyController');
+const { 
+    getCompanyProfile, postJob, getJobApplicants, getDashboardStats, 
+    getShortlistedCandidates, updateApplicantStatus, getNotifications, 
+    markNotificationRead, deleteNotification, clearAllNotifications, 
+    withdrawJob, massUpdateApplicantStatus
+} = require('../controllers/companyController');
 const { authenticateToken, requireRole } = require('../middlewares/auth');
 
 const router = express.Router();
@@ -14,11 +19,19 @@ router.get('/profile', getCompanyProfile);
 router.post('/jobs', postJob);
 router.get('/jobs/shortlisted', getShortlistedCandidates);
 router.get('/jobs/:jobId/applicants', getJobApplicants);
+router.put('/jobs/:jobId/withdraw', withdrawJob);
 
 // Applicant actions
+router.put('/jobs/applications/bulk', massUpdateApplicantStatus);
 router.put('/jobs/applications/:id/status', updateApplicantStatus);
 
 // Analytics
 router.get('/dashboard', getDashboardStats);
+
+// Notifications
+router.get('/notifications', getNotifications);
+router.put('/notifications/:id/read', markNotificationRead);
+router.delete('/notifications/:id', deleteNotification);
+router.delete('/notifications', clearAllNotifications);
 
 module.exports = router;

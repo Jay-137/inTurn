@@ -5,6 +5,8 @@ import {
   ArrowUpDown, GraduationCap, BookOpen, Layers, Loader2,
 } from "lucide-react";
 import { useTheme } from "./theme-context";
+import { toast } from "sonner";
+import { AcademicUnitSelector } from "./academic-unit-selector";
 
 const API_BASE = "http://localhost:3000/api";
 function getToken() { return localStorage.getItem("token") || ""; }
@@ -20,7 +22,6 @@ export type EligibleFilters = {
 };
 
 /* ─── Filter option constants ─── */
-const BRANCHES = ["CSE", "IT", "ECE", "EEE", "ME", "CE", "AI/ML"];
 const GRAD_YEARS = ["2024", "2025", "2026", "2027"];
 
 type Student = {
@@ -207,11 +208,72 @@ function RangeSlider({
 }
 
 /* ─── Student Detail Modal ─── */
-function StudentModal({ student, onClose, dk }: { student: Student; onClose: () => void; dk: boolean }) {
+function StudentModal({ student, onClose, dk, onMarkPlaced }: {
+  student: Student; onClose: () => void; dk: boolean;
+  onMarkPlaced?: (studentId: number | string) => void;
+}) {
   const [tab, setTab] = useState<ModalTab>("overview");
   const card = `rounded-xl border ${dk ? "bg-[#111116] border-white/10" : "bg-white border-gray-200"}`;
   const muted = dk ? "text-gray-400" : "text-gray-500";
   const heading = dk ? "text-white" : "text-gray-900";
+  const [showPlacement, setShowPlacement] = useState(false);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | "">("");
+  const [selectedJobId, setSelectedJobId] = useState<number | "">("");
+  const [placementLoading, setPlacementLoading] = useState(false);
+
+  useEffect(() => {
+    if (showPlacement && companies.length === 0) {
+      fetch(`${API_BASE}/university/students/${student.id}/shortlisted-companies`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      })
+        .then(r => r.ok ? r.json() : { companies: [] })
+        .then(data => setCompanies(data.companies || []))
+        .catch(() => {});
+    }
+  }, [showPlacement, student.id]);
+
+  const handleUnplace = async () => {
+    setPlacementLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/university/students/${student.id}/placement`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (res.ok) {
+        toast.success(`${student.name} un-marked as placed!`);
+        onMarkPlaced?.(student.id);
+        onClose();
+      } else {
+        toast.error("Failed to un-mark as placed.");
+      }
+    } catch {
+      toast.error("An error occurred.");
+    }
+    setPlacementLoading(false);
+  };
+
+  const handleConfirmPlacement = async () => {
+    if (!selectedCompanyId || !selectedJobId) return;
+    setPlacementLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/university/students/${student.id}/placement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ companyId: selectedCompanyId, jobId: selectedJobId }),
+      });
+      if (res.ok) {
+        toast.success(`${student.name} marked as placed!`);
+        onMarkPlaced?.(student.id);
+        onClose();
+      } else {
+        toast.error("Failed to mark as placed.");
+      }
+    } catch {
+      toast.error("An error occurred.");
+    }
+    setPlacementLoading(false);
+  };
 
   const tabs: { key: ModalTab; label: string; icon: React.ElementType }[] = [
     { key: "overview", label: "Overview", icon: Layers },
@@ -334,6 +396,66 @@ function StudentModal({ student, onClose, dk }: { student: Student; onClose: () 
             </div>
           )}
         </div>
+
+        {/* Mark Placed / Unplace Section */}
+        {student.status !== "Placed" && !showPlacement && (
+          <div className={`px-6 pb-5 border-t ${dk ? "border-white/8" : "border-gray-200"} pt-4`}>
+            <button
+              onClick={() => setShowPlacement(true)}
+              className="w-full py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              <UserCheck className="w-4 h-4" /> Mark as Placed
+            </button>
+          </div>
+        )}
+        {student.status === "Placed" && !showPlacement && (
+          <div className={`px-6 pb-5 border-t ${dk ? "border-white/8" : "border-gray-200"} pt-4`}>
+            <button
+              onClick={handleUnplace}
+              disabled={placementLoading}
+              className={`w-full py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 ${dk ? "bg-red-500/10 hover:bg-red-500/20 text-red-400" : "bg-red-50 hover:bg-red-100 text-red-600"}`}
+            >
+              {placementLoading ? "Processing..." : "Unplace Student"}
+            </button>
+          </div>
+        )}
+        {showPlacement && (
+          <div className={`px-6 pb-5 border-t ${dk ? "border-white/8" : "border-gray-200"} pt-4 space-y-3`}>
+            <p className={`text-xs font-medium ${heading}`}>Mark as Placed</p>
+            {companies.length === 0 ? (
+              <p className={`text-xs ${muted}`}>Student must be shortlisted by at least one recruiter to be marked as placed.</p>
+            ) : (
+              <>
+                <select
+                  value={selectedCompanyId}
+                  onChange={(e) => { setSelectedCompanyId(e.target.value ? Number(e.target.value) : ""); setSelectedJobId(""); }}
+                  className={`w-full p-2 rounded-lg border text-xs outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                >
+                  <option value="">Select Company...</option>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                {selectedCompanyId !== "" && (
+                  <select
+                    value={selectedJobId}
+                    onChange={(e) => setSelectedJobId(e.target.value ? Number(e.target.value) : "")}
+                    className={`w-full p-2 rounded-lg border text-xs outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                  >
+                    <option value="">Select Job...</option>
+                    {companies.find(c => c.id === selectedCompanyId)?.jobs?.map((j: any) => (
+                      <option key={j.id} value={j.id}>{j.title}</option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setShowPlacement(false); setSelectedCompanyId(""); setSelectedJobId(""); }} className={`px-3 py-1.5 text-xs rounded-lg border ${dk ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>Cancel</button>
+              <button onClick={handleConfirmPlacement} disabled={companies.length === 0 || !selectedCompanyId || !selectedJobId || placementLoading} className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-500 disabled:opacity-50">
+                {placementLoading ? "Saving..." : "Confirm Placement"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -418,8 +540,12 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
 
   /* Primary filters */
   const [branch, setBranch] = useState(initialFilters?.course || "");
+  const [branches, setBranches] = useState<string[]>([]);
   const [years, setYears] = useState<string[]>([]);
-  const [placementStatus, setPlacementStatus] = useState<"" | "PLACED" | "UNPLACED">("");
+  const [placementStatus, setPlacementStatus] = useState<"" | "PLACED" | "UNPLACED">("UNPLACED");
+
+  /* Refetch trigger */
+  const [refetchTrigger, setRefetchTrigger] = useState(0);
 
   /* More filters */
   const [moreOpen, setMoreOpen] = useState(false);
@@ -447,6 +573,28 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
 
   /* Selected student */
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+
+  // Fetch academic unit tree to get dynamic branches
+  useEffect(() => {
+    fetch(`${API_BASE}/university/academic-units/tree`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then(res => res.ok ? res.json() : { tree: [] })
+      .then(data => {
+        const flat: any[] = [];
+        const traverse = (nodes: any[]) => {
+          nodes.forEach(n => {
+            flat.push(n.label);
+            if (n.children) traverse(n.children);
+          });
+        };
+        traverse(data.tree || []);
+        // Sort uniquely
+        const uniqueBranches = Array.from(new Set(flat)).sort() as string[];
+        setBranches(uniqueBranches);
+      })
+      .catch(() => setBranches([]));
+  }, []);
 
   /* ─── Fetch students from backend ─── */
   useEffect(() => {
@@ -490,7 +638,7 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
       })
       .catch(() => { setAllStudents([]); setTotalCount(0); })
       .finally(() => setLoading(false));
-  }, [page, sortKey, sortDir, searchQuery, searchType, branch, placementStatus, cgpaRange, initialFilters?.academicUnitId]);
+  }, [page, sortKey, sortDir, searchQuery, searchType, branch, placementStatus, cgpaRange, initialFilters?.academicUnitId, refetchTrigger]);
 
   /* Since pagination is server-side now */
   const filteredStudents = allStudents;
@@ -614,9 +762,11 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
           <Filter className={`w-3.5 h-3.5 ${muted}`} />
           <span className={`text-xs ${muted}`}>Filters:</span>
 
-          <SingleSelectDropdown
-            label="Branch" options={BRANCHES} selected={branch}
-            onChange={(v) => { setBranch(v); setPage(1); }} dk={dk}
+          <AcademicUnitSelector
+            dk={dk}
+            label=""
+            selected={branch ? [branch] : []}
+            onSelect={(sel) => { setBranch(sel.length > 0 ? sel[0].name : ""); setPage(1); }}
           />
           <MultiSelectDropdown
             label="Graduation Year" options={GRAD_YEARS} selected={years}
@@ -890,7 +1040,12 @@ export function EligibleStudents({ initialFilters }: { initialFilters?: Eligible
 
       {/* ── 8. Student Detail Modal ── */}
       {selectedStudent && (
-        <StudentModal student={selectedStudent} onClose={() => setSelectedStudent(null)} dk={dk} />
+        <StudentModal
+          student={selectedStudent}
+          onClose={() => setSelectedStudent(null)}
+          dk={dk}
+          onMarkPlaced={() => setRefetchTrigger(t => t + 1)}
+        />
       )}
 
       {/* Advanced Filters Modal */}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   ChevronRight, Users, UserCheck, TrendingUp, Briefcase,
-  Home, ArrowRight, FolderOpen, Info,
+  Home, ArrowRight, FolderOpen, Info, Search, X,
 } from "lucide-react";
 import { useTheme } from "./theme-context";
 import type { EligibleFilters } from "./eligible-students";
@@ -206,6 +206,7 @@ export function PlacementBranches({
 
   const [rootData, setRootData] = useState<HierNode[]>([]);
   const [loading, setLoading] = useState(true);
+  const [branchSearch, setBranchSearch] = useState("");
 
   useEffect(() => {
     fetch("http://localhost:3000/api/university/academic-units/tree", {
@@ -218,12 +219,16 @@ export function PlacementBranches({
   }, []);
 
   // Current nodes to display
-  const currentNodes: HierNode[] = path.length === 0
+  const allCurrentNodes: HierNode[] = path.length === 0
     ? rootData
     : (path[path.length - 1].children ?? []);
 
+  const currentNodes = allCurrentNodes.filter(n =>
+    !branchSearch || n.label.toLowerCase().includes(branchSearch.toLowerCase())
+  );
+
   const currentLevel = path.length === 0 ? -1 : path[path.length - 1].level;
-  const noChildren = path.length > 0 && currentNodes.length === 0;
+  const noChildren = path.length > 0 && allCurrentNodes.length === 0;
 
   // Drill down
   const drillDown = (node: HierNode) => {
@@ -283,6 +288,24 @@ export function PlacementBranches({
           </span>
         ))}
       </nav>
+
+      {/* Search */}
+      <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs ${
+        dk ? "bg-[#111116] border-white/8" : "bg-white border-gray-200"
+      }`}>
+        <Search className={`w-3.5 h-3.5 ${muted}`} />
+        <input
+          value={branchSearch}
+          onChange={(e) => setBranchSearch(e.target.value)}
+          placeholder="Filter branches by name..."
+          className={`flex-1 bg-transparent outline-none text-xs ${dk ? "text-gray-300 placeholder:text-gray-600" : "text-gray-700 placeholder:text-gray-400"}`}
+        />
+        {branchSearch && (
+          <button onClick={() => setBranchSearch("")} className={`${muted} hover:opacity-70`}>
+            <X className="w-3 h-3" />
+          </button>
+        )}
+      </div>
 
       {/* Level header with summary */}
       <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 rounded-xl border ${

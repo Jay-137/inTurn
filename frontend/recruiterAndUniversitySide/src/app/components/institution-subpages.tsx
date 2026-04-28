@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useTheme } from "./theme-context";
 import { Building2, Briefcase, GraduationCap, ClipboardList, CheckCircle, XCircle, Search, Filter, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { AcademicUnitSelector, collectDescendantNames, findNodeByLabel } from "./academic-unit-selector";
+import type { AcademicNode } from "./academic-unit-selector";
 
 const API_BASE = "http://localhost:3000/api";
 
@@ -43,8 +45,27 @@ export function AllStudents() {
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [branchFilter, setBranchFilter] = useState("ALL");
   const [rejectingStudentId, setRejectingStudentId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [branches, setBranches] = useState<{label: string, id: number}[]>([]);
+  const [unitTree, setUnitTree] = useState<AcademicNode[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/university/academic-units/tree`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then(res => res.ok ? res.json() : { tree: [] })
+      .then(data => {
+        // Flatten tree to get all branches/departments
+        const treeData = data.tree || [];
+        setUnitTree(treeData);
+        const flat = flattenUnitTree(treeData);
+        setBranches(flat);
+      })
+      .catch(() => setBranches([]));
+  }, []);
 
   const fetchStudents = () => {
     setLoading(true);
@@ -93,25 +114,51 @@ export function AllStudents() {
     }
   };
 
-  const filteredStudents = filter === "ALL" 
-    ? students 
-    : students.filter((s: any) => s.registrationStatus === filter);
+  const filteredStudents = students.filter((s: any) => {
+    if (filter !== "ALL" && s.registrationStatus !== filter) return false;
+    
+    const branchName = s.placementBranch || s.branch || s.academicUnit?.name || "";
+    
+    // Hierarchical cascade: if a parent node is selected, include all descendants
+    if (branchFilter !== "ALL") {
+      const selectedNode = findNodeByLabel(unitTree, branchFilter);
+      if (selectedNode) {
+        const allowedNames = collectDescendantNames(selectedNode);
+        if (!allowedNames.some(name => name === branchName)) return false;
+      } else {
+        // Fallback to exact match if node not found in tree
+        if (branchName !== branchFilter) return false;
+      }
+    }
+
+    if (search) {
+      const term = search.toLowerCase();
+      const name = s.user?.name?.toLowerCase() || "";
+      if (!name.includes(term) && !branchName.toLowerCase().includes(term)) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className={`text-2xl tracking-tight ${heading}`}>All Students</h1>
-        <p className={`text-sm mt-1 ${muted}`}>Manage and view all registered students.</p>
+        <p className={`text-sm mt-1 ${muted}`}>Manage student profiles and registration statuses.</p>
       </div>
       <div className={card}>
-        <div className="flex justify-between items-center mb-6">
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
-            <Search className="w-4 h-4" />
-            <input placeholder="Search students..." className="bg-transparent outline-none w-64" />
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+              <Search className="w-4 h-4" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student or branch..." className="bg-transparent outline-none w-64" />
+            </div>
+            <AcademicUnitSelector
+              dk={dk}
+              label=""
+              selected={branchFilter === "ALL" ? [] : [branchFilter]}
+              onSelect={(sel) => setBranchFilter(sel.length > 0 ? sel[0].name : "ALL")}
+            />
           </div>
-          <button className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "border-white/10 hover:bg-white/5 text-gray-300" : "border-gray-200 hover:bg-gray-50 text-gray-700"}`}>
-            <Filter className="w-4 h-4" /> Filters
-          </button>
         </div>
         
         {/* Status Filters */}
@@ -143,12 +190,13 @@ export function AllStudents() {
               <th className={tableTh}>Branch</th>
               <th className={tableTh}>CGPA</th>
               <th className={tableTh}>Status</th>
+              <th className={tableTh}>Placement</th>
               <th className={`${tableTh} text-right`}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredStudents.length === 0 ? (
-              <tr><td colSpan={5} className={`py-6 text-center ${muted}`}>No students found.</td></tr>
+              <tr><td colSpan={6} className={`py-6 text-center ${muted}`}>No students found.</td></tr>
             ) : filteredStudents.map((s: any, i: number) => (
               <tr key={i}>
                 <td className={tableTd}>{s.user?.name || "—"}</td>
@@ -165,6 +213,15 @@ export function AllStudents() {
                   </span>
                   {s.registrationStatus === "REJECTED" && s.rejectionReason && (
                     <p className={`text-[10px] mt-1 ${muted}`}>Reason: {s.rejectionReason}</p>
+                  )}
+                </td>
+                <td className={tableTd}>
+                  {s.placementStatus === "PLACED" ? (
+                    <span className="text-xs text-green-500 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Placed</span>
+                  ) : s.registrationStatus === "APPROVED" ? (
+                    <span className={`text-xs ${muted}`}>Not Placed</span>
+                  ) : (
+                    <span className={`text-xs ${muted}`}>—</span>
                   )}
                 </td>
                 <td className={`${tableTd} text-right space-x-2`}>
@@ -206,6 +263,9 @@ export function AllJobs() {
   const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [sortBy, setSortBy] = useState("title_asc");
 
   useEffect(() => {
     fetch(`${API_BASE}/jobs`, {
@@ -217,6 +277,22 @@ export function AllJobs() {
       .finally(() => setLoading(false));
   }, []);
 
+  const filteredJobs = jobs
+    .filter(j => {
+      if (statusFilter !== "ALL" && j.approvalStatus !== statusFilter) return false;
+      if (search) {
+        const term = search.toLowerCase();
+        if (!(j.title?.toLowerCase().includes(term) || j.company?.name?.toLowerCase().includes(term))) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "title_asc") return (a.title || "").localeCompare(b.title || "");
+      if (sortBy === "cgpa_desc") return (b.minCgpa || 0) - (a.minCgpa || 0);
+      if (sortBy === "cgpa_asc") return (a.minCgpa || 0) - (b.minCgpa || 0);
+      return 0;
+    });
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -224,6 +300,26 @@ export function AllJobs() {
         <p className={`text-sm mt-1 ${muted}`}>View all jobs posted by recruiters.</p>
       </div>
       <div className={card}>
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+            <Search className="w-4 h-4" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search job title or company..." className="bg-transparent outline-none w-64" />
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="ALL">All Statuses</option>
+              <option value="PENDING_REVIEW">Pending</option>
+              <option value="APPROVED">Approved</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="title_asc">Title A-Z</option>
+              <option value="cgpa_desc">Min CGPA ↓</option>
+              <option value="cgpa_asc">Min CGPA ↑</option>
+            </select>
+          </div>
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -241,9 +337,9 @@ export function AllJobs() {
             </tr>
           </thead>
           <tbody>
-            {jobs.length === 0 ? (
-              <tr><td colSpan={5} className={`py-6 text-center ${muted}`}>No jobs found.</td></tr>
-            ) : jobs.map((j: any, i: number) => (
+            {filteredJobs.length === 0 ? (
+              <tr><td colSpan={5} className={`py-6 text-center ${muted}`}>{search || statusFilter !== "ALL" ? "No jobs match the current filters." : "No jobs found."}</td></tr>
+            ) : filteredJobs.map((j: any, i: number) => (
               <tr key={i}>
                 <td className={tableTd}>{j.company?.name || "—"}</td>
                 <td className={tableTd}>{j.title}</td>
@@ -274,6 +370,8 @@ export function PendingJobs() {
   const [actionType, setActionType] = useState<"APPROVE" | "REJECT" | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [universityDeadline, setUniversityDeadline] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("deadline_asc");
 
   const fetchJobs = () => {
     setLoading(true);
@@ -323,6 +421,19 @@ export function PendingJobs() {
     }
   };
 
+  const filteredJobs = jobs
+    .filter(j => {
+      if (!search) return true;
+      const term = search.toLowerCase();
+      return (j.title?.toLowerCase().includes(term) || j.company?.name?.toLowerCase().includes(term));
+    })
+    .sort((a, b) => {
+      if (sortBy === "deadline_asc") return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      if (sortBy === "deadline_desc") return new Date(b.deadline).getTime() - new Date(a.deadline).getTime();
+      if (sortBy === "cgpa_desc") return (b.minCgpa || 0) - (a.minCgpa || 0);
+      return 0;
+    });
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -330,14 +441,26 @@ export function PendingJobs() {
         <p className={`text-sm mt-1 ${muted}`}>Review and approve job postings from recruiters.</p>
       </div>
       <div className={card}>
+        <div className="flex justify-between items-center mb-6">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+            <Search className="w-4 h-4" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search jobs or companies..." className="bg-transparent outline-none w-64" />
+          </div>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+            <option value="deadline_asc">Deadline (Earliest)</option>
+            <option value="deadline_desc">Deadline (Latest)</option>
+            <option value="cgpa_desc">Min CGPA (Highest)</option>
+          </select>
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span className={`ml-2 text-sm ${muted}`}>Loading pending jobs…</span>
           </div>
-        ) : jobs.length === 0 ? (
+        ) : filteredJobs.length === 0 ? (
           <div className="text-center py-12">
-            <p className={muted}>No pending job approvals at this time.</p>
+            <p className={muted}>{search ? "No jobs match your search." : "No pending job approvals at this time."}</p>
           </div>
         ) : (
           <table className="w-full">
@@ -351,7 +474,7 @@ export function PendingJobs() {
               </tr>
             </thead>
             <tbody>
-              {jobs.map((j: any, i: number) => (
+              {filteredJobs.map((j: any, i: number) => (
                 <tr key={i}>
                   <td className={tableTd}>{j.company?.name || "—"}</td>
                   <td className={tableTd}>{j.title}</td>
@@ -414,8 +537,13 @@ export function AllApplications() {
   const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
   const [apps, setApps] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("ALL");
+  const [sortBy, setSortBy] = useState("match_desc");
+  const [minMatch, setMinMatch] = useState("");
 
-  useEffect(() => {
+  const fetchApps = () => {
+    setLoading(true);
     fetch(`${API_BASE}/university/applications`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
@@ -432,7 +560,24 @@ export function AllApplications() {
       })
       .catch(() => setApps([]))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchApps(); }, []);
+
+  const minMatchNum = minMatch ? Number(minMatch) : 0;
+  const filteredApps = apps
+    .filter(a => {
+      if (filter !== "ALL" && a.status !== filter) return false;
+      if (minMatchNum > 0 && a.match < minMatchNum) return false;
+      if (search && !a.student.toLowerCase().includes(search.toLowerCase()) && !a.job.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "match_desc") return b.match - a.match;
+      if (sortBy === "match_asc") return a.match - b.match;
+      if (sortBy === "student_asc") return a.student.localeCompare(b.student);
+      return 0;
+    });
 
   return (
     <div className="p-6 space-y-6">
@@ -441,6 +586,38 @@ export function AllApplications() {
         <p className={`text-sm mt-1 ${muted}`}>Overview of all student applications across jobs.</p>
       </div>
       <div className={card}>
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+            <Search className="w-4 h-4" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student or job..." className="bg-transparent outline-none w-64" />
+          </div>
+          <div className="flex gap-2 flex-wrap items-center">
+            <select value={filter} onChange={(e) => setFilter(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="ALL">All Statuses</option>
+              <option value="PENDING_REVIEW">Pending Review</option>
+              <option value="FORWARDED_TO_RECRUITER">Forwarded</option>
+              <option value="SHORTLISTED_BY_RECRUITER">Shortlisted</option>
+              <option value="REJECTED_BY_UNIVERSITY">Rejected</option>
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="match_desc">Match Score ↓</option>
+              <option value="match_asc">Match Score ↑</option>
+              <option value="student_asc">Student A-Z</option>
+            </select>
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-sm ${dk ? "border-white/10" : "border-gray-300"}`}>
+              <span className={`text-xs whitespace-nowrap ${muted}`}>Min:</span>
+              <select value={["50","60","70","80","90"].includes(minMatch) ? minMatch : ""} onChange={(e) => setMinMatch(e.target.value)} className={`text-xs bg-transparent outline-none ${dk ? "text-white" : "text-gray-900"}`}>
+                <option value="">Any</option>
+                <option value="50">≥50%</option>
+                <option value="60">≥60%</option>
+                <option value="70">≥70%</option>
+                <option value="80">≥80%</option>
+                <option value="90">≥90%</option>
+              </select>
+              <input type="number" min="0" max="100" placeholder="custom" value={["50","60","70","80","90",""].includes(minMatch) ? "" : minMatch} onChange={(e) => setMinMatch(e.target.value)} className={`w-12 text-xs bg-transparent outline-none text-center ${dk ? "text-white placeholder:text-gray-600" : "text-gray-900 placeholder:text-gray-400"}`} />
+            </div>
+          </div>
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -457,14 +634,18 @@ export function AllApplications() {
             </tr>
           </thead>
           <tbody>
-            {apps.length === 0 ? (
+            {filteredApps.length === 0 ? (
               <tr><td colSpan={4} className={`py-6 text-center ${muted}`}>No applications found.</td></tr>
-            ) : apps.map((a: any, i: number) => (
+            ) : filteredApps.map((a: any, i: number) => (
               <tr key={i}>
                 <td className={tableTd}>{a.student}</td>
                 <td className={tableTd}>{a.job}</td>
                 <td className={tableTd}>{a.match}%</td>
-                <td className={tableTd}>{a.status}</td>
+                <td className={tableTd}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${a.status === "SHORTLISTED_BY_RECRUITER" ? (dk ? "bg-green-500/10 text-green-400" : "bg-green-50 text-green-600") : a.status === "REJECTED_BY_UNIVERSITY" ? (dk ? "bg-red-500/10 text-red-400" : "bg-red-50 text-red-600") : a.status === "FORWARDED_TO_RECRUITER" ? (dk ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-600") : (dk ? "bg-amber-500/10 text-amber-400" : "bg-amber-50 text-amber-600")}`}>
+                    {a.status}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1255,6 +1436,10 @@ export function PendingApplications() {
   const { card, heading, muted, tableTh, tableTd } = getStyles(dk);
   const [apps, setApps] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("match_desc");
+  const [minMatch, setMinMatch] = useState("");
+  const [selectedApps, setSelectedApps] = useState<number[]>([]);
   const [actionAppId, setActionAppId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -1264,7 +1449,16 @@ export function PendingApplications() {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
       .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setApps(Array.isArray(data) ? data : data.applications || []))
+      .then((data) => {
+        const applications = Array.isArray(data) ? data : data.applications || [];
+        setApps(applications.map((a: any) => ({
+          id: a.id,
+          student: a.student?.user?.name || "—",
+          job: a.job?.title || "—",
+          match: Math.round(a.matchScore || 0),
+          status: a.status,
+        })));
+      })
       .catch(() => setApps([]))
       .finally(() => setLoading(false));
   };
@@ -1272,6 +1466,49 @@ export function PendingApplications() {
   useEffect(() => {
     fetchApps();
   }, []);
+
+  const minMatchNum = minMatch ? Number(minMatch) : 0;
+  const filteredApps = apps
+    .filter(a => {
+      if (minMatchNum > 0 && a.match < minMatchNum) return false;
+      if (search && !a.student.toLowerCase().includes(search.toLowerCase()) && !a.job.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "match_desc") return b.match - a.match;
+      if (sortBy === "match_asc") return a.match - b.match;
+      if (sortBy === "student_asc") return a.student.localeCompare(b.student);
+      return 0;
+    });
+
+  const toggleSelectAll = () => {
+    if (selectedApps.length === filteredApps.length && selectedApps.length > 0) {
+      setSelectedApps([]);
+    } else {
+      setSelectedApps(filteredApps.map(a => a.id));
+    }
+  };
+
+  const handleBulkAction = async () => {
+    if (selectedApps.length === 0) return;
+    try {
+      const res = await fetch(`${API_BASE}/university/applications/bulk`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ applicationIds: selectedApps, status: "FORWARDED_TO_RECRUITER" })
+      });
+      if (res.ok) {
+        toast.success("Applications forwarded successfully");
+        setSelectedApps([]);
+        fetchApps();
+      } else {
+        toast.error("Failed to forward applications");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("An error occurred");
+    }
+  };
 
   const handleApprove = async (id: number) => {
     try {
@@ -1305,114 +1542,115 @@ export function PendingApplications() {
     }
   };
 
-  const handleMassForward = async (jobId: number, jobTitle: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/university/applications/mass-forward/${jobId}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(`Forwarded ${data.count} applications for ${jobTitle}`);
-        fetchApps();
-      }
-    } catch (e) {
-      toast.error("Failed to mass-forward applications");
-    }
-  };
-
-  // Group apps by job for mass-forward functionality
-  const appsByJob = apps.reduce((acc: any, app: any) => {
-    const jobId = app.job?.id;
-    if (!acc[jobId]) acc[jobId] = { job: app.job, apps: [] };
-    acc[jobId].apps.push(app);
-    return acc;
-  }, {});
-
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className={`text-2xl tracking-tight ${heading}`}>Pending Applications</h1>
         <p className={`text-sm mt-1 ${muted}`}>Review student applications before forwarding them to recruiters.</p>
       </div>
+      <div className={card}>
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+            <Search className="w-4 h-4" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student or job..." className="bg-transparent outline-none w-64" />
+          </div>
+          <div className="flex gap-2 flex-wrap items-center">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="match_desc">Match Score ↓</option>
+              <option value="match_asc">Match Score ↑</option>
+              <option value="student_asc">Student A-Z</option>
+            </select>
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-sm ${dk ? "border-white/10" : "border-gray-300"}`}>
+              <span className={`text-xs whitespace-nowrap ${muted}`}>Min:</span>
+              <select value={["50","60","70","80","90"].includes(minMatch) ? minMatch : ""} onChange={(e) => setMinMatch(e.target.value)} className={`text-xs bg-transparent outline-none ${dk ? "text-white" : "text-gray-900"}`}>
+                <option value="">Any</option>
+                <option value="50">≥50%</option>
+                <option value="60">≥60%</option>
+                <option value="70">≥70%</option>
+                <option value="80">≥80%</option>
+                <option value="90">≥90%</option>
+              </select>
+              <input type="number" min="0" max="100" placeholder="custom" value={["50","60","70","80","90",""].includes(minMatch) ? "" : minMatch} onChange={(e) => setMinMatch(e.target.value)} className={`w-12 text-xs bg-transparent outline-none text-center ${dk ? "text-white placeholder:text-gray-600" : "text-gray-900 placeholder:text-gray-400"}`} />
+            </div>
+            {selectedApps.length > 0 && (
+              <button onClick={handleBulkAction} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition-colors">
+                Forward Selected ({selectedApps.length})
+              </button>
+            )}
+          </div>
+        </div>
 
-      {loading ? (
-        <div className={card}>
+        {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span className={`ml-2 text-sm ${muted}`}>Loading pending applications…</span>
+            <span className={`ml-2 text-sm ${muted}`}>Loading applications…</span>
           </div>
-        </div>
-      ) : Object.keys(appsByJob).length === 0 ? (
-        <div className={card}>
-          <div className="text-center py-12">
-            <ClipboardList className={`w-8 h-8 mx-auto mb-3 ${muted}`} />
-            <p className={muted}>No pending applications at this time.</p>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {Object.values(appsByJob).map((group: any) => (
-            <div key={group.job.id} className={card}>
-              <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100 dark:border-white/5">
-                <div>
-                  <h3 className={`text-lg font-medium ${heading}`}>{group.job.title}</h3>
-                  <p className={`text-xs ${muted}`}>{group.job.company?.name || "Company"} • {group.apps.length} pending</p>
-                </div>
-                <button 
-                  onClick={() => handleMassForward(group.job.id, group.job.title)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
-                >
-                  Forward All to Recruiter
-                </button>
-              </div>
-
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className={tableTh}>Student</th>
-                    <th className={tableTh}>Branch</th>
-                    <th className={tableTh}>Match Score</th>
-                    <th className={`${tableTh} text-right`}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.apps.map((a: any) => (
-                    <tr key={a.id}>
-                      <td className={tableTd}>{a.student?.user?.name || "—"}</td>
-                      <td className={tableTd}>{a.student?.academicUnit?.name || "—"}</td>
-                      <td className={tableTd}>{Math.round(a.matchScore || 0)}%</td>
-                      <td className={`${tableTd} text-right space-x-2`}>
-                        {actionAppId !== a.id && (
-                          <>
-                            <button onClick={() => handleApprove(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
-                            <button onClick={() => setActionAppId(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
-                          </>
-                        )}
-                        {actionAppId === a.id && (
-                          <div className="flex flex-col items-end gap-2">
-                            <input 
-                              type="text" 
-                              placeholder="Reason for rejection" 
-                              value={rejectReason}
-                              onChange={(e) => setRejectReason(e.target.value)}
-                              className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
-                            />
-                            <div className="flex gap-2">
-                              <button onClick={() => { setActionAppId(null); setRejectReason(""); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
-                              <button onClick={() => handleReject(a.id)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
-                            </div>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
-      )}
+        ) : (
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className={`${tableTh} w-10`}>
+                <input 
+                  type="checkbox" 
+                  checked={selectedApps.length > 0 && selectedApps.length === filteredApps.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300"
+                />
+              </th>
+              <th className={tableTh}>Student</th>
+              <th className={tableTh}>Job</th>
+              <th className={tableTh}>Match Score</th>
+              <th className={`${tableTh} text-right`}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredApps.length === 0 ? (
+              <tr><td colSpan={5} className={`py-6 text-center ${muted}`}>No pending applications found.</td></tr>
+            ) : filteredApps.map((a: any, i: number) => (
+              <tr key={i}>
+                <td className={tableTd}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedApps.includes(a.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedApps([...selectedApps, a.id]);
+                      else setSelectedApps(selectedApps.filter(id => id !== a.id));
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                </td>
+                <td className={tableTd}>{a.student}</td>
+                <td className={tableTd}>{a.job}</td>
+                <td className={tableTd}>{a.match}%</td>
+                <td className={`${tableTd} text-right space-x-2`}>
+                  {actionAppId !== a.id && (
+                    <>
+                      <button onClick={() => handleApprove(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                      <button onClick={() => setActionAppId(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                    </>
+                  )}
+                  {actionAppId === a.id && (
+                    <div className="flex flex-col items-end gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Reason for rejection" 
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => { setActionAppId(null); setRejectReason(""); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
+                        <button onClick={() => handleReject(a.id)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
+                      </div>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        )}
+      </div>
     </div>
   );
 }

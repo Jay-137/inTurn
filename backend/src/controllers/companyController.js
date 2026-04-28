@@ -176,6 +176,10 @@ const getDashboardStats = async (req, res) => {
         const shortlistedCount = applications.filter(a => a.status === 'SHORTLISTED_BY_RECRUITER').length;
         const pendingCount = applications.filter(a => a.status === 'FORWARDED_TO_RECRUITER').length;
         const rejectedCount = applications.filter(a => a.status === 'REJECTED_BY_RECRUITER').length;
+        const placementsForCompany = await prisma.placementSelection.findMany({
+            where: { jobId: { in: jobIds } }
+        });
+        const placedCount = placementsForCompany.length;
 
         // Calculate Average Match Score
         const appsWithScore = applications.filter(a => a.matchScore !== null);
@@ -241,9 +245,14 @@ const getDashboardStats = async (req, res) => {
             summaryCards: [
                 { label: "Active Job Postings", value: activeJobsCount.toString(), sub: "All positions open", color: "blue" },
                 { label: "Total Applicants", value: totalApplicants.toString(), sub: "All time", color: "indigo" },
-                { label: "Shortlisted", value: shortlistedCount.toString(), sub: "Match >= 75%", color: "green" },
+                { label: "Shortlisted", value: shortlistedCount.toString(), sub: "By your team", color: "green" },
                 { label: "Avg Match Score", value: `${avgMatchScore}%`, sub: "Across all apps", color: "amber" }
             ],
+            funnel: {
+                totalApplicants,
+                shortlistedCount,
+                placedCount
+            },
             activeJobs: activeJobsDetailed,
             applicationStatus: [
                 { name: "Shortlisted", value: shortlistedCount, color: "#22c55e" },
@@ -358,11 +367,124 @@ const updateApplicantStatus = async (req, res) => {
     }
 };
 
+// --- Notifications ---
+const getNotifications = async (req, res) => {
+    try {
+        const notifications = await prisma.notification.findMany({
+            where: { userId: req.user.id },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json({ notifications });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch notifications' });
+    }
+};
+
+const markNotificationRead = async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        await prisma.notification.update({
+            where: { id },
+            data: { isRead: true }
+        });
+        res.json({ message: "Notification marked as read" });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to mark notification' });
+    }
+};
+
+const deleteNotification = async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        await prisma.notification.delete({ where: { id, userId: req.user.id } });
+        res.json({ message: 'Notification deleted' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to delete notification' });
+    }
+};
+
+const clearAllNotifications = async (req, res) => {
+    try {
+        await prisma.notification.deleteMany({ where: { userId: req.user.id } });
+        res.json({ message: 'All notifications cleared' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to clear notifications' });
+    }
+};
+
+const massUpdateApplicantStatus = async (req, res) => {
+    try {
+        const { applicationIds, status } = req.body;
+        if (!applicationIds || !Array.isArray(applicationIds)) {
+            return res.status(400).json({ error: 'applicationIds array is required.' });
+        }
+        
+        const validStatuses = ['SHORTLISTED_BY_RECRUITER', 'REJECTED_BY_RECRUITER'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ error: 'Invalid status.' });
+        }
+
+        const updateRes = await prisma.application.updateMany({
+            where: { id: { in: applicationIds } },
+            data: { status }
+        });
+
+        res.json({ message: `Updated ${updateRes.count} applications.`, count: updateRes.count });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to mass update applications.' });
+    }
+};
+
+// --- Job Withdrawal ---
+const withdrawJob = async (req, res) => {
+    try {
+        const jobId = parseInt(req.params.jobId);
+        
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.id },
+            include: { company: true }
+        });
+
+        if (!user || !user.company) {
+            return res.status(403).json({ error: "Only registered company recruiters can withdraw jobs" });
+        }
+
+        const job = await prisma.job.findUnique({ where: { id: jobId } });
+        if (!job) {
+            return res.status(404).json({ error: "Job not found" });
+        }
+        if (job.companyId !== user.company.id) {
+            return res.status(403).json({ error: "You can only withdraw your own company's jobs" });
+        }
+
+        const updatedJob = await prisma.job.update({
+            where: { id: jobId },
+            data: { approvalStatus: 'WITHDRAWN' }
+        });
+
+        res.json({ message: "Job successfully withdrawn", job: updatedJob });
+    } catch (error) {
+        console.error("Withdraw job error:", error);
+        res.status(500).json({ error: "Failed to withdraw job" });
+    }
+};
+
 module.exports = {
     getCompanyProfile,
     postJob,
     getJobApplicants,
     getDashboardStats,
     getShortlistedCandidates,
-    updateApplicantStatus
+    updateApplicantStatus,
+    getNotifications,
+    markNotificationRead,
+    deleteNotification,
+    clearAllNotifications,
+    withdrawJob,
+    massUpdateApplicantStatus
 };

@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Briefcase, MapPin, Clock, Search,
   Building2, ArrowRight, CheckCircle2, X,
-  Target, TrendingUp, AlertCircle, Sparkles, Loader2, AlertTriangle
+  Target, TrendingUp, AlertCircle, Sparkles, Loader2, AlertTriangle, ShieldCheck
 } from "lucide-react";
 import { jobApi, studentApi, type Job } from "../../lib/api";
 
@@ -37,6 +37,7 @@ function JobCard({
   preferredRoles,
   showMatchingTags,
   applicationDetails,
+  isPlaced,
 }: {
   job: EnrichedJob;
   isApplied: boolean;
@@ -49,6 +50,7 @@ function JobCard({
   preferredRoles?: string[];
   showMatchingTags?: boolean;
   applicationDetails?: any;
+  isPlaced?: boolean;
 }) {
   const isDeadlinePassed = new Date() > new Date(job.deadline);
   const hasScore = job.match !== null;
@@ -165,7 +167,12 @@ function JobCard({
                 </p>
               )}
 
-              {!isApplied && !isDeadlinePassed ? (
+              {isPlaced ? (
+                <div className="flex items-center gap-2 text-sm text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-100">
+                  <ShieldCheck className="w-4 h-4" />
+                  You are placed. Applications are disabled.
+                </div>
+              ) : !isApplied && !isDeadlinePassed ? (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-3">
                     <GradientButton size="sm" onClick={onApply} className={applying ? "opacity-70 pointer-events-none" : ""}>
@@ -365,8 +372,21 @@ export function JobMatches() {
     );
   }
 
+  const isPlaced = studentProfile?.placementStatus === 'PLACED';
+
   return (
     <div className="space-y-6 max-w-5xl">
+      {/* Placed Banner */}
+      {isPlaced && (
+        <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200">
+          <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-indigo-900">You have been placed!</p>
+            <p className="text-xs text-indigo-600 mt-0.5">Congratulations! Your placement has been confirmed by your university. Job applications are now disabled.</p>
+          </div>
+        </div>
+      )}
+
       {/* Tab Switcher */}
       <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         <button
@@ -455,6 +475,7 @@ export function JobMatches() {
                       preferredRoles={preferredRoles}
                       showMatchingTags
                       applicationDetails={applicationsMap[String(job.id)]}
+                      isPlaced={isPlaced}
                     />
                   </motion.div>
                 ))}
@@ -535,6 +556,7 @@ export function JobMatches() {
                   preferredRoles={preferredRoles}
                   showMatchingTags
                   applicationDetails={applicationsMap[String(job.id)]}
+                  isPlaced={isPlaced}
                 />
               </motion.div>
             ))}

@@ -105,7 +105,7 @@ router.get(
 router.get(
     '/academic-units/tree',
     authenticateToken,
-    requireRole(['UNIVERSITY', 'STUDENT']),
+    requireRole(['UNIVERSITY', 'STUDENT', 'RECRUITER']),
     universityController.getAcademicUnitTree
 );
 
@@ -201,5 +201,39 @@ router.post(
     universityController.massForwardApplications
 );
 
+router.put(
+    '/applications/bulk',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.massUpdateApplications
+);
+
+router.post(
+    '/students/:studentId/placement',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.markStudentPlaced
+);
+
+router.delete(
+    '/students/:studentId/placement',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.unmarkStudentPlaced
+);
+
+router.get(
+    '/students/:studentId/shortlisted-companies',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getShortlistedCompaniesForStudent
+);
+
+router.get(
+    '/companies-and-jobs',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.getAllCompaniesAndJobs
+);
 
 module.exports = router;

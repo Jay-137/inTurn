@@ -490,6 +490,14 @@ const getDashboardStats = async (req, res) => {
             where: { studentId: student.id }
         });
 
+        if (student.placementStatus === 'PLACED') {
+            return res.json({
+                shortlistedCount: 0,
+                totalApplications,
+                shortlistedApplications: []
+            });
+        }
+
         res.json({
             shortlistedCount: shortlistedApplications.length,
             totalApplications,

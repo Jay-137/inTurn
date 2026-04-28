@@ -834,8 +834,24 @@ const updateJobStatus = async (req, res) => {
 
         const job = await prisma.job.update({
             where: { id: jobId },
-            data
+            data,
+            include: { company: { include: { users: true } } }
         });
+
+        // Notify recruiters in the company
+        if (job.company && job.company.users) {
+            const notifications = job.company.users.map(u => ({
+                userId: u.id,
+                message: status === 'APPROVED' 
+                    ? `Your job posting "${job.title}" has been approved by the university.`
+                    : `Your job posting "${job.title}" was rejected: ${data.rejectionReason}`,
+                type: status === 'APPROVED' ? 'success' : 'warning'
+            }));
+            if (notifications.length > 0) {
+                await prisma.notification.createMany({ data: notifications });
+            }
+        }
+
         res.status(200).json({ message: `Job ${status}`, job });
     } catch (error) {
         console.error(error);
@@ -1064,6 +1080,166 @@ const verifyCertification = async (req, res) => {
     }
 };
 
+// [UNIVERSITY ONLY] Get all companies and their jobs for placement selection
+const getAllCompaniesAndJobs = async (req, res) => {
+    try {
+        const companies = await prisma.company.findMany({
+            include: {
+                jobs: {
+                    select: { id: true, title: true, approvalStatus: true }
+                }
+            }
+        });
+        res.json({ companies });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch companies and jobs.' });
+    }
+};
+
+// [UNIVERSITY ONLY] Bulk update application statuses
+const massUpdateApplications = async (req, res) => {
+    try {
+        const { applicationIds, status } = req.body;
+        if (!applicationIds || !Array.isArray(applicationIds) || applicationIds.length === 0) {
+            return res.status(400).json({ error: 'applicationIds array is required.' });
+        }
+
+        const validStatuses = ['FORWARDED_TO_RECRUITER', 'REJECTED_BY_UNIVERSITY'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({ error: `Status must be one of ${validStatuses.join(', ')}` });
+        }
+
+        const updateRes = await prisma.application.updateMany({
+            where: { id: { in: applicationIds } },
+            data: { status }
+        });
+
+        res.json({ message: `Successfully updated ${updateRes.count} applications.`, count: updateRes.count });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to mass update applications.' });
+    }
+};
+
+const markStudentPlaced = async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const { companyId, jobId } = req.body;
+
+        if (!companyId || !jobId) {
+            return res.status(400).json({ error: 'companyId and jobId are required.' });
+        }
+
+        // Must check if application exists and is shortlisted? The requirement says "must strictly contain only recruiters who shortlisted".
+        // This is enforced by the dropdown, but we can verify here.
+        const application = await prisma.application.findFirst({
+            where: {
+                studentId: parseInt(studentId),
+                jobId: parseInt(jobId),
+                status: 'SHORTLISTED_BY_RECRUITER'
+            }
+        });
+
+        if (!application) {
+            return res.status(400).json({ error: 'Student must be shortlisted by this recruiter for this job before being marked as placed.' });
+        }
+
+        // Create PlacementSelection
+        await prisma.placementSelection.create({
+            data: {
+                jobId: parseInt(jobId),
+                studentId: parseInt(studentId),
+                status: 'APPROVED_BY_UNIVERSITY'
+            }
+        });
+
+        // Update Student status
+        await prisma.student.update({
+            where: { id: parseInt(studentId) },
+            data: { placementStatus: 'PLACED' }
+        });
+
+        // Update other pending applications for this student to withdrawn? Or just let frontend filter.
+        // I will let frontend filter, or update status if needed.
+        // Let's update other applications to WITHDRAWN_DUE_TO_PLACEMENT to keep db clean.
+        await prisma.application.updateMany({
+            where: {
+                studentId: parseInt(studentId),
+                id: { not: application.id },
+                status: { in: ['PENDING_REVIEW', 'FORWARDED_TO_RECRUITER', 'SHORTLISTED_BY_RECRUITER'] }
+            },
+            data: { status: 'WITHDRAWN_DUE_TO_PLACEMENT' }
+        });
+
+        res.json({ message: 'Student marked as placed successfully.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to mark student as placed.' });
+    }
+};
+
+const unmarkStudentPlaced = async (req, res) => {
+    try {
+        const { studentId } = req.params;
+
+        // Delete PlacementSelection
+        await prisma.placementSelection.deleteMany({
+            where: { studentId: parseInt(studentId) }
+        });
+
+        // Update Student status
+        await prisma.student.update({
+            where: { id: parseInt(studentId) },
+            data: { placementStatus: 'UNPLACED' }
+        });
+
+        // We could revert withdrawn applications, but it's hard to know what their previous state was.
+        // For simplicity, we just leave them withdrawn. The student can re-apply if needed.
+
+        res.json({ message: 'Student un-marked as placed successfully.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to un-mark student as placed.' });
+    }
+};
+
+const getShortlistedCompaniesForStudent = async (req, res) => {
+    try {
+        const { studentId } = req.params;
+
+        const applications = await prisma.application.findMany({
+            where: {
+                studentId: parseInt(studentId),
+                status: 'SHORTLISTED_BY_RECRUITER'
+            },
+            include: {
+                job: {
+                    include: { company: true }
+                }
+            }
+        });
+
+        // Group by company
+        const companiesMap = new Map();
+        applications.forEach(app => {
+            const comp = app.job.company;
+            if (!companiesMap.has(comp.id)) {
+                companiesMap.set(comp.id, { id: comp.id, name: comp.name, jobs: [] });
+            }
+            companiesMap.get(comp.id).jobs.push({
+                id: app.job.id,
+                title: app.job.title
+            });
+        });
+
+        res.json({ companies: Array.from(companiesMap.values()) });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch shortlisted companies.' });
+    }
+};
+
 module.exports = { 
     approveStudent,
     rejectStudent,
@@ -1091,5 +1267,10 @@ module.exports = {
     getPendingApplications,
     approveApplication,
     rejectApplication,
-    massForwardApplications
+    massUpdateApplications,
+    massForwardApplications,
+    markStudentPlaced,
+    unmarkStudentPlaced,
+    getShortlistedCompaniesForStudent,
+    getAllCompaniesAndJobs
 };
