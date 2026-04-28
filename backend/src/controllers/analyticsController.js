@@ -1,14 +1,32 @@
 const prisma = require('../utils/prisma');
 
-const studentBranchLabel = (student) => (
-    student.branch || student.academicUnit?.name || 'Unassigned'
-);
+const PLACEMENT_BRANCH_UNIT_TYPES = new Set(['DEPARTMENT', 'STREAM', 'BRANCH', 'PROGRAM', 'PROGRAMME', 'COURSE']);
+
+/**
+ * Traverses up the academic unit tree to find the parent branch/department name.
+ */
+const getPlacementBranch = (student) => {
+    if (student.branch) return student.branch;
+    
+    let current = student.academicUnit;
+    let fallback = student.academicUnit?.name || 'Unassigned';
+
+    while (current) {
+        const type = String(current.type || '').toUpperCase();
+        if (PLACEMENT_BRANCH_UNIT_TYPES.has(type)) {
+            return current.name;
+        }
+        current = current.parent;
+    }
+
+    return fallback;
+};
 
 const buildBranchStats = (students) => {
     const stats = new Map();
 
     students.forEach((student) => {
-        const branch = studentBranchLabel(student);
+        const branch = getPlacementBranch(student);
         const current = stats.get(branch) || { branch, total: 0, placed: 0, rate: 0 };
         current.total += 1;
         if (student.placementStatus === 'PLACED') current.placed += 1;
@@ -88,7 +106,27 @@ const getStudentAnalytics = async (req, res) => {
             select: {
                 branch: true,
                 placementStatus: true,
-                academicUnit: { select: { name: true } }
+                academicUnit: {
+                    select: {
+                        name: true,
+                        type: true,
+                        parent: {
+                            select: {
+                                name: true,
+                                type: true,
+                                parent: {
+                                    select: {
+                                        name: true,
+                                        type: true,
+                                        parent: {
+                                            select: { name: true, type: true }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         });
         const branchStats = buildBranchStats(students);

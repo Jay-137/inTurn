@@ -97,78 +97,104 @@ const fetchRepoTextFile = async (repo, path) => {
     }
 };
 
+const fetchGithubRecursiveTree = async (repo) => {
+    try {
+        const branch = repo.default_branch || 'main';
+        const response = await fetch(`${GITHUB_API_URL}/repos/${repo.full_name}/git/trees/${branch}?recursive=1`, {
+            headers: getHeaders()
+        });
+        if (!response.ok) return [];
+        const data = await response.json();
+        return data.tree || [];
+    } catch (error) {
+        console.error(`Error fetching tree for ${repo.full_name}:`, error.message);
+        return [];
+    }
+};
+
 const collectDependencyNames = async (repo) => {
     const dependencyNames = new Set();
+    const tree = await fetchGithubRecursiveTree(repo);
+    
+    // Filter for relevant files, limiting depth to 3 levels to keep it lightweight
+    // and ignoring known noisy directories like node_modules
+    const targetFiles = tree.filter(item => {
+        if (item.type !== 'blob') return false;
+        
+        const pathParts = item.path.split('/');
+        if (pathParts.length > 3) return false; // Max depth 3
+        
+        const ignoredDirs = ['node_modules', 'vendor', 'venv', 'env', 'dist', 'build', 'target'];
+        if (pathParts.some(part => ignoredDirs.includes(part.toLowerCase()))) return false;
 
-    // --- Node.js / JavaScript ---
-    const packageJson = await fetchRepoTextFile(repo, 'package.json');
-    if (packageJson) {
-        try {
-            const parsed = JSON.parse(packageJson);
-            [
-                parsed.dependencies,
-                parsed.devDependencies,
-                parsed.peerDependencies,
-                parsed.optionalDependencies
-            ].forEach((group) => {
-                if (group && typeof group === 'object') {
-                    Object.keys(group).forEach((name) => dependencyNames.add(name.toLowerCase()));
-                }
-            });
-            dependencyNames.add('nodejs');
-        } catch (error) {
-            console.error(`Unable to parse package.json for ${repo.full_name}:`, error.message);
+        const fileName = pathParts[pathParts.length - 1].toLowerCase();
+        return ['package.json', 'requirements.txt', 'pom.xml', 'build.gradle', 'build.gradle.kts'].includes(fileName);
+    });
+
+    // Fetch and process each found file in parallel
+    await Promise.all(targetFiles.map(async (file) => {
+        const content = await fetchRepoTextFile(repo, file.path);
+        if (!content) return;
+
+        const fileName = file.path.split('/').pop().toLowerCase();
+
+        // --- Node.js / JavaScript ---
+        if (fileName === 'package.json') {
+            try {
+                const parsed = JSON.parse(content);
+                [
+                    parsed.dependencies,
+                    parsed.devDependencies,
+                    parsed.peerDependencies,
+                    parsed.optionalDependencies
+                ].forEach((group) => {
+                    if (group && typeof group === 'object') {
+                        Object.keys(group).forEach((name) => dependencyNames.add(name.toLowerCase()));
+                    }
+                });
+                dependencyNames.add('nodejs');
+            } catch (error) {
+                console.error(`Unable to parse ${file.path} for ${repo.full_name}:`, error.message);
+            }
         }
-    }
 
-    // --- Python ---
-    const requirements = await fetchRepoTextFile(repo, 'requirements.txt');
-    if (requirements) {
-        requirements
-            .split(/\r?\n/)
-            .map((line) => line.trim().split(/[=<>~! ]/)[0])
-            .filter(Boolean)
-            .forEach((name) => dependencyNames.add(name.toLowerCase()));
-    }
-
-    // --- Java / Spring Boot ---
-    const pomXml = await fetchRepoTextFile(repo, 'pom.xml');
-    if (pomXml) {
-        dependencyNames.add('java');
-        if (pomXml.includes('spring-boot')) {
-            dependencyNames.add('springboot');
-            dependencyNames.add('spring-boot');
-            dependencyNames.add('spring');
+        // --- Python ---
+        if (fileName === 'requirements.txt') {
+            content
+                .split(/\r?\n/)
+                .map((line) => line.trim().split(/[=<>~! ]/)[0])
+                .filter(Boolean)
+                .forEach((name) => dependencyNames.add(name.toLowerCase()));
+            dependencyNames.add('python');
         }
-        if (pomXml.includes('spring-data-jpa')) dependencyNames.add('jpa');
-        if (pomXml.includes('postgresql')) dependencyNames.add('postgresql');
-        if (pomXml.includes('mysql')) dependencyNames.add('mysql');
-        if (pomXml.includes('mongodb')) dependencyNames.add('mongodb');
-    }
 
-    const buildGradle = await fetchRepoTextFile(repo, 'build.gradle');
-    if (buildGradle) {
-        dependencyNames.add('java');
-        if (buildGradle.includes('spring-boot')) {
-            dependencyNames.add('springboot');
-            dependencyNames.add('spring-boot');
-            dependencyNames.add('spring');
+        // --- Java / Spring Boot ---
+        if (fileName === 'pom.xml') {
+            dependencyNames.add('java');
+            if (content.includes('spring-boot')) {
+                dependencyNames.add('springboot');
+                dependencyNames.add('spring-boot');
+                dependencyNames.add('spring');
+            }
+            if (content.includes('spring-data-jpa')) dependencyNames.add('jpa');
+            if (content.includes('postgresql')) dependencyNames.add('postgresql');
+            if (content.includes('mysql')) dependencyNames.add('mysql');
+            if (content.includes('mongodb')) dependencyNames.add('mongodb');
         }
-        if (buildGradle.includes('postgresql')) dependencyNames.add('postgresql');
-        if (buildGradle.includes('mysql')) dependencyNames.add('mysql');
-    }
 
-    const buildGradleKts = await fetchRepoTextFile(repo, 'build.gradle.kts');
-    if (buildGradleKts) {
-        dependencyNames.add('java');
-        if (buildGradleKts.includes('spring-boot')) {
-            dependencyNames.add('springboot');
-            dependencyNames.add('spring-boot');
-            dependencyNames.add('spring');
+        if (fileName === 'build.gradle' || fileName === 'build.gradle.kts') {
+            dependencyNames.add('java');
+            if (content.includes('spring-boot')) {
+                dependencyNames.add('springboot');
+                dependencyNames.add('spring-boot');
+                dependencyNames.add('spring');
+            }
+            if (content.includes('postgresql')) dependencyNames.add('postgresql');
+            if (content.includes('mysql')) dependencyNames.add('mysql');
         }
-    }
+    }));
 
-    console.log(`[GitHub] ${repo.full_name} deps:`, Array.from(dependencyNames).join(', ') || '(none)');
+    console.log(`[GitHub] ${repo.full_name} scanned ${targetFiles.length} files. Total deps:`, Array.from(dependencyNames).join(', ') || '(none)');
     return Array.from(dependencyNames);
 };
 
@@ -252,13 +278,13 @@ const parseStatsWithRepoSignals = async (profile, repos = []) => {
     let totalStars = 0;
     let totalForks = 0;
     const languageBytes = {};
-    const frameworkSet = new Set();
+    const frameworkCounts = {}; // Track how many repos each framework appears in
     const dependencySet = new Set();
 
     const originalRepos = repos.filter(repo => !repo.fork);
     const frameworkKeywords = [
         'react', 'react-native', 'express', 'node', 'nodejs', 'spring', 'springboot', 'spring-boot',
-        'django', 'flutter', 'nextjs', 'next', 'tailwind', 'tailwindcss', 'mongodb', 'postgresql',
+        'django', 'flutter', 'nextjs', 'tailwind', 'tailwindcss', 'mongodb', 'postgresql',
         'postgres', 'pg', 'mysql', 'mysql2', 'mariadb', 'redis', 'firebase', 'supabase', 'aws', 'docker',
         'kubernetes', 'vue', 'angular', 'bootstrap', 'flask', 'fastapi', 'pytorch', 'tensorflow',
         'prisma', 'mongoose', 'sequelize', '@prisma/client', 'java', 'jpa'
@@ -300,13 +326,24 @@ const parseStatsWithRepoSignals = async (profile, repos = []) => {
             ...dependencyNames
         ].map((tag) => tag.toLowerCase());
 
+        const currentRepoFrameworks = new Set();
+
         frameworkKeywords.forEach((kw) => {
-            if (searchTags.some((tag) => tag.includes(kw))) frameworkSet.add(kw);
+            if (searchTags.some((tag) => tag.includes(kw))) {
+                currentRepoFrameworks.add(kw);
+            }
         });
 
         // Exact dependency name matches
         dependencyNames.forEach((dep) => {
-            if (DEP_TO_FRAMEWORK[dep]) frameworkSet.add(DEP_TO_FRAMEWORK[dep]);
+            if (DEP_TO_FRAMEWORK[dep]) {
+                currentRepoFrameworks.add(DEP_TO_FRAMEWORK[dep]);
+            }
+        });
+
+        // Increment global counts for frameworks found in THIS repo
+        currentRepoFrameworks.forEach(fw => {
+            frameworkCounts[fw] = (frameworkCounts[fw] || 0) + 1;
         });
     }));
 
@@ -321,7 +358,7 @@ const parseStatsWithRepoSignals = async (profile, repos = []) => {
         totalStars,
         totalForks,
         topLanguages,
-        frameworks: Array.from(frameworkSet),
+        frameworks: frameworkCounts, // Now returns { "react": 3, "express": 1 }
         dependencies: Array.from(dependencySet),
         languageBreakdown: languageBytes
     };

@@ -113,6 +113,7 @@ const FRAMEWORK_MAP = {
     'opencv': 'OpenCV',
     'laravel': 'Laravel',
     'prisma': 'Prisma',
+    '@prisma/client': 'Prisma',
     'mongoose': 'Mongoose',
     'sequelize': 'Sequelize',
     'mariadb': 'MariaDB',
@@ -200,17 +201,20 @@ const generateSkillVector = (student) => {
             if (score > 0) vector[lang] = Math.round(score * 100) / 100;
         });
 
-        // Frameworks detected by GitHub scanner
-        if (Array.isArray(ghStats.frameworks)) {
-            ghStats.frameworks.forEach(fw => {
+        // Frameworks detected by GitHub scanner (now with project counts)
+        if (ghStats.frameworks && typeof ghStats.frameworks === 'object') {
+            Object.entries(ghStats.frameworks).forEach(([fw, count]) => {
                 const name = FRAMEWORK_MAP[fw] || (fw.charAt(0).toUpperCase() + fw.slice(1));
+                const projectCount = Number(count) || 1;
 
-                let fwScore = 0.6; // Base score if detected
-                if ((Number(ghStats.totalStars) || 0) > 10) fwScore += 0.2;
-                if ((Number(ghStats.totalStars) || 0) > 50) fwScore += 0.2;
+                // Base score of 0.6 + 0.1 for every additional project (up to 0.9)
+                let fwScore = 0.6 + (Math.min(3, projectCount - 1) * 0.1);
+                
+                // Extra popularity boost from stars
+                if ((Number(ghStats.totalStars) || 0) > 10) fwScore += 0.1;
+                if ((Number(ghStats.totalStars) || 0) > 50) fwScore += 0.1;
 
                 const finalFwScore = Math.min(1.0, Math.round(fwScore * 100) / 100);
-                // Use max if already exists (from experience/certification)
                 vector[name] = Math.max(vector[name] || 0, finalFwScore);
             });
         }
@@ -219,9 +223,9 @@ const generateSkillVector = (student) => {
         if (Array.isArray(ghStats.dependencies)) {
             ghStats.dependencies.forEach(dep => {
                 const name = FRAMEWORK_MAP[dep];
+                // Only add if not already boosted by framework detection
                 if (name && !vector[name]) {
-                    // Dependency presence gives a slightly lower base score than framework detection
-                    vector[name] = Math.max(vector[name] || 0, 0.5);
+                    vector[name] = 0.5;
                 }
             });
         }
