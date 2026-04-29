@@ -5,6 +5,7 @@ import { GetStartedPage } from "./components/get-started-page";
 import { LoginPage } from "./components/login-page";
 import { InstitutionDashboard } from "./components/institution-dashboard";
 import { RecruiterDashboard } from "./components/recruiter-dashboard";
+import { RegisterCompany } from "./components/register-company";
 
 export const router = createBrowserRouter([
   { path: "/", Component: HomePage },
@@ -13,5 +14,6 @@ export const router = createBrowserRouter([
   { path: "/login", Component: LoginPage },
   { path: "/institution-dashboard", Component: InstitutionDashboard },
   { path: "/recruiter-dashboard", Component: RecruiterDashboard },
+  { path: "/register-company", Component: RegisterCompany },
   { path: "*", Component: HomePage },
 ]);

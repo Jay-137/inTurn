@@ -54,10 +54,11 @@ export function AcademicUnitSelector({
   };
 
   return (
-    <div className="grid md:grid-cols-2 gap-4">
+    <div className="space-y-5">
       {levels.map(({ level, nodes, selected }) => (
-        <div key={level} className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">
+        <div key={level} className="space-y-1.5">
+          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">{level + 1}</span>
             {level === 0 ? "School / Field" : level === 1 ? "Branch / Department" : `Level ${level + 1}`}
           </label>
           <select

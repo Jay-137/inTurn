@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Save, UserRound } from "lucide-react";
+import { Loader2, Save, UserRound, GraduationCap, BookOpen, CalendarDays } from "lucide-react";
 import { studentApi } from "../../lib/api";
 import { useApp } from "./app-context";
 import { Card, GradientButton, Badge } from "./shared";
@@ -142,48 +142,73 @@ export function ManageProfile() {
             </Badge>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-5">
+          <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">CGPA</label>
-              <input
-                type="number"
-                min="0"
-                max="10"
-                step="0.01"
-                required
-                value={form.cgpa}
-                onChange={(e) => setForm({ ...form, cgpa: parseFloat(e.target.value) || 0 })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-              />
+              <label className="text-sm font-medium text-gray-700">Cumulative GPA</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <GraduationCap className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.01"
+                  required
+                  value={form.cgpa}
+                  onChange={(e) => setForm({ ...form, cgpa: parseFloat(e.target.value) || 0 })}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Active Backlogs</label>
-              <input
-                type="number"
-                min="0"
-                required
-                value={form.backlogCount}
-                onChange={(e) => setForm({ ...form, backlogCount: parseInt(e.target.value) || 0 })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-              />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <BookOpen className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={form.backlogCount}
+                  onChange={(e) => setForm({ ...form, backlogCount: parseInt(e.target.value) || 0 })}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-5">
+          <div className="grid md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Passing Year</label>
-              <input
-                type="number"
-                required
-                value={form.passingYear}
-                onChange={(e) => setForm({ ...form, passingYear: parseInt(e.target.value) || 0 })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-              />
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <CalendarDays className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="number"
+                  required
+                  value={form.passingYear}
+                  onChange={(e) => setForm({ ...form, passingYear: parseInt(e.target.value) || 0 })}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
+                />
+              </div>
             </div>
+            {/* Empty space for grid alignment or can span full if we want */}
+          </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Academic Unit / Section</label>
+          {/* Dedicated Section for Academic Unit */}
+          <div className="pt-4 border-t border-gray-100">
+            <div className="mb-4">
+              <h3 className="text-base font-semibold text-gray-900">Academic Placement Unit</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Select your exact program/section. This determines your branch eligibility for placements.
+              </p>
+            </div>
+            
+            <div className="p-5 rounded-xl border border-gray-200 bg-gray-50">
               <AcademicUnitSelector
                 tree={academicTree}
                 value={form.academicUnitId}

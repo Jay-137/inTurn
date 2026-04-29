@@ -3,7 +3,7 @@ const {
     getCompanyProfile, postJob, getJobApplicants, getDashboardStats, 
     getShortlistedCandidates, updateApplicantStatus, getNotifications, 
     markNotificationRead, deleteNotification, clearAllNotifications, 
-    withdrawJob, massUpdateApplicantStatus
+    withdrawJob, massUpdateApplicantStatus, registerCompany
 } = require('../controllers/companyController');
 const { authenticateToken, requireRole } = require('../middlewares/auth');
 
@@ -11,6 +11,9 @@ const router = express.Router();
 
 // Apply auth middleware to all recruiter routes
 router.use(authenticateToken);
+
+// Company Registration (Recruiter onboarding)
+router.post('/register', registerCompany);
 
 // Company Profile
 router.get('/profile', getCompanyProfile);

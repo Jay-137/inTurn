@@ -236,4 +236,18 @@ router.get(
     universityController.getAllCompaniesAndJobs
 );
 
+router.put(
+    '/jobs/mass-approve',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.massApproveJobs
+);
+
+router.put(
+    '/students/mass-approve',
+    authenticateToken,
+    requireRole(['UNIVERSITY']),
+    universityController.massApproveStudents
+);
+
 module.exports = router;

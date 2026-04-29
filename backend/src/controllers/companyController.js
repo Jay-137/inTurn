@@ -1,5 +1,52 @@
 const prisma = require('../utils/prisma');
 
+// Register a new company and link it to the current user (recruiter)
+const registerCompany = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { companyName, industry } = req.body;
+
+        if (!companyName) {
+            return res.status(400).json({ error: "Company name is required" });
+        }
+
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user || user.role !== 'RECRUITER') {
+            return res.status(403).json({ error: "Only recruiters can register a company" });
+        }
+
+        if (user.companyId) {
+            return res.status(400).json({ error: "User is already linked to a company" });
+        }
+
+        // Check if company already exists
+        let company = await prisma.company.findFirst({
+            where: { name: companyName }
+        });
+
+        // If not, create it
+        if (!company) {
+            company = await prisma.company.create({
+                data: {
+                    name: companyName,
+                    industry: industry || null
+                }
+            });
+        }
+
+        // Link user to company
+        await prisma.user.update({
+            where: { id: userId },
+            data: { companyId: company.id }
+        });
+
+        res.status(201).json({ message: "Company registered successfully", company });
+    } catch (error) {
+        console.error("Register company error:", error);
+        res.status(500).json({ error: "Server error registering company" });
+    }
+};
+
 // Fetch the profile of the current company
 const getCompanyProfile = async (req, res) => {
     try {
@@ -44,6 +91,14 @@ const postJob = async (req, res) => {
 
         if (!user || !user.company) {
             return res.status(403).json({ error: "Only registered company recruiters can post jobs" });
+        }
+
+        // Validate deadline
+        const parsedDeadline = new Date(deadline);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Normalize to start of day
+        if (parsedDeadline < today) {
+            return res.status(400).json({ error: "Deadline cannot be in the past." });
         }
 
         // Create the Job
@@ -475,6 +530,7 @@ const withdrawJob = async (req, res) => {
 };
 
 module.exports = {
+    registerCompany,
     getCompanyProfile,
     postJob,
     getJobApplicants,

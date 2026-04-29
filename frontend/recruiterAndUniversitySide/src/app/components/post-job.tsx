@@ -328,7 +328,7 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
 
           <div>
             <label className={labelCls}>Application Deadline</label>
-            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={inputCls} />
+            <input type="date" min={new Date().toISOString().split('T')[0]} value={deadline} onChange={(e) => setDeadline(e.target.value)} className={inputCls} />
           </div>
 
           <div>

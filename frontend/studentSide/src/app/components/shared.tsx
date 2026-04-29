@@ -47,10 +47,12 @@ export function Card({
   children,
   className = "",
   hover = false,
+  onClick,
 }: {
   children: ReactNode;
   className?: string;
   hover?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <motion.div
@@ -59,6 +61,7 @@ export function Card({
       transition={{ duration: 0.3 }}
       whileHover={hover ? { y: -2, boxShadow: "0 12px 40px rgba(99, 102, 241, 0.12)" } : undefined}
       className={`bg-white rounded-2xl border border-border p-6 shadow-sm ${className}`}
+      onClick={onClick}
     >
       {children}
     </motion.div>

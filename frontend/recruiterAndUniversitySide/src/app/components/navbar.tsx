@@ -9,8 +9,8 @@ import { useNavigate } from "react-router";
 /* ── hover helper ── */
 function useHover() {
   const [open, setOpen] = useState(false);
-  const t = useRef<ReturnType<typeof setTimeout>>();
-  const enter = () => { clearTimeout(t.current); setOpen(true); };
+  const t = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enter = () => { if (t.current) clearTimeout(t.current); setOpen(true); };
   const leave = () => { t.current = setTimeout(() => setOpen(false), 120); };
   return { open, enter, leave, setOpen };
 }

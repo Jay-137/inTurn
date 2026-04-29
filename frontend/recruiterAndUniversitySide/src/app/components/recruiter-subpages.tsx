@@ -1,6 +1,6 @@
 import { useTheme } from "./theme-context";
 import { useState, useEffect } from "react";
-import { Search, Filter, Download, Star, BarChart3, TrendingUp, Users, CheckCircle2, Play, X, Video, ArrowLeft, Loader2, FileText, ExternalLink } from "lucide-react";
+import { Search, Filter, Download, Star, BarChart3, TrendingUp, Users, CheckCircle2, Play, X, Video, ArrowLeft, Loader2, FileText, ExternalLink, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 
 const API_BASE = "http://localhost:3000/api";
@@ -284,15 +284,76 @@ export function JobApplicants({ jobId, onBack }: { jobId: number; onBack: () => 
                 <div><p className={`text-sm ${muted}`}>Email</p><p className={`font-medium ${heading}`}>{selected.student?.user?.email || "—"}</p></div>
               </div>
 
-              {/* Skills */}
-              {selected.student?.skills?.length > 0 && (
+              {/* Skills & Soft Skills */}
+              {(selected.student?.skills?.length > 0 || selected.student?.softSkills?.length > 0) && (
+                <div className="grid md:grid-cols-2 gap-6">
+                  {selected.student?.skills?.length > 0 && (
+                    <div>
+                      <h4 className={`text-sm font-medium mb-3 flex items-center gap-2 ${heading}`}><Star className="w-4 h-4 text-blue-500" /> Technical Skills</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selected.student.skills.map((s: any) => (
+                          <span key={s.id} className={`text-xs px-2.5 py-1 rounded-full ${dk ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" : "bg-blue-50 text-blue-700 border border-blue-200"}`}>
+                            {s.skill?.name} ({Math.round(s.score * 100)}%)
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {selected.student?.softSkills?.length > 0 && (
+                    <div>
+                      <h4 className={`text-sm font-medium mb-3 flex items-center gap-2 ${heading}`}><Users className="w-4 h-4 text-purple-500" /> Soft Skills</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selected.student.softSkills.map((s: any) => (
+                          <span key={s.id} className={`text-xs px-2.5 py-1 rounded-full ${dk ? "bg-purple-500/10 text-purple-400 border border-purple-500/20" : "bg-purple-50 text-purple-700 border border-purple-200"}`}>
+                            {s.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Experience */}
+              {selected.student?.experiences?.length > 0 && (
                 <div>
-                  <h4 className={`text-sm font-medium mb-2 ${heading}`}>Skills</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {selected.student.skills.map((s: any) => (
-                      <span key={s.id} className={`text-xs px-2.5 py-1 rounded-full ${dk ? "bg-blue-500/10 text-blue-400" : "bg-blue-50 text-blue-700"}`}>
-                        {s.skill?.name} ({Math.round(s.score * 100)}%)
-                      </span>
+                  <h4 className={`text-sm font-medium mb-3 flex items-center gap-2 ${heading}`}><Briefcase className="w-4 h-4 text-amber-500" /> Experience</h4>
+                  <div className="space-y-3">
+                    {selected.student.experiences.map((exp: any) => (
+                      <div key={exp.id} className={`p-4 rounded-xl border ${dk ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}>
+                        <div className="flex justify-between items-start mb-1">
+                          <strong className={`text-sm ${heading}`}>{exp.title}</strong>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${dk ? "bg-white/10" : "bg-white border"}`}>{exp.type}</span>
+                        </div>
+                        <p className={`text-sm mb-2 ${dk ? "text-gray-300" : "text-gray-700"}`}>{exp.company}</p>
+                        <p className={`text-xs mb-2 ${muted}`}>{exp.duration}</p>
+                        {exp.description && <p className={`text-sm ${muted}`}>{exp.description}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Certifications */}
+              {selected.student?.certifications?.length > 0 && (
+                <div>
+                  <h4 className={`text-sm font-medium mb-3 flex items-center gap-2 ${heading}`}><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Certifications</h4>
+                  <div className="space-y-3">
+                    {selected.student.certifications.map((cert: any) => (
+                      <div key={cert.id} className={`p-3 rounded-xl border flex items-center justify-between ${dk ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}>
+                        <div>
+                          <strong className={`text-sm block ${heading}`}>{cert.name}</strong>
+                          <span className={`text-xs ${muted}`}>{cert.platform} • {cert.issueDate}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {cert.verified && <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase font-bold">Verified</span>}
+                          {cert.credentialUrl && (
+                            <a href={cert.credentialUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-600">
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>

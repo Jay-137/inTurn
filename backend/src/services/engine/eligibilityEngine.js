@@ -128,6 +128,29 @@ const SKILL_CATEGORIES = {
 
     // Academic
     'ACADEMIC FUNDAMENTALS': 'ACADEMIC',
+
+    // Expanded canonical names
+    'DATA STRUCTURES AND ALGORITHMS': 'CORE_CS',
+    'OBJECT ORIENTED PROGRAMMING':    'CORE_CS',
+    'DATABASE MANAGEMENT SYSTEM':    'CORE_CS',
+    'OPERATING SYSTEMS':             'CORE_CS',
+    'COMPUTER NETWORKS':             'CORE_CS',
+    'ARTIFICIAL INTELLIGENCE':       'AI_ML',
+    'NATURAL LANGUAGE PROCESSING':   'AI_ML',
+    'SOFTWARE DEVELOPMENT LIFE CYCLE':'CORE_CS',
+};
+
+const ACRONYMS = {
+    'DSA':  'DATA STRUCTURES AND ALGORITHMS',
+    'OOP':  'OBJECT ORIENTED PROGRAMMING',
+    'DBMS': 'DATABASE MANAGEMENT SYSTEM',
+    'OS':   'OPERATING SYSTEMS',
+    'CN':   'COMPUTER NETWORKS',
+    'AI':   'ARTIFICIAL INTELLIGENCE',
+    'ML':   'MACHINE LEARNING',
+    'DL':   'DEEP LEARNING',
+    'NLP':  'NATURAL LANGUAGE PROCESSING',
+    'SDLC': 'SOFTWARE DEVELOPMENT LIFE CYCLE'
 };
 
 const PRIORITY_WEIGHTS = {
@@ -147,7 +170,14 @@ const CATEGORY_MATCH_FACTOR = 0.5; // 50% credit for same-category match
  * For compound names like "Frontend (React/JS)", keeps structure intact.
  */
 function normalizeSkillName(name) {
-    let n = name.trim().toUpperCase();
+    if (!name) return "";
+    let n = name.trim().toUpperCase().replace(/&/g, 'AND');
+    
+    // Check for acronyms
+    if (ACRONYMS[n]) {
+        return ACRONYMS[n];
+    }
+
     if (!/[()\/]/.test(n)) {
         n = n.replace(/\./g, '');
         n = n.replace(/JS$/, '');
@@ -155,6 +185,12 @@ function normalizeSkillName(name) {
     } else {
         n = n.replace(/\s+/g, ' ').trim();
     }
+    
+    // Check acronym again after stripping dots (e.g. "D.S.A.")
+    if (ACRONYMS[n]) {
+        return ACRONYMS[n];
+    }
+
     return n || name.trim().toUpperCase();
 }
 

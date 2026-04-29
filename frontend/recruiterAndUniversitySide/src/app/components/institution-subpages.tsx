@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "./theme-context";
-import { Building2, Briefcase, GraduationCap, ClipboardList, CheckCircle, XCircle, Search, Filter, Loader2, Trash2 } from "lucide-react";
+import { Building2, Briefcase, GraduationCap, ClipboardList, CheckCircle, XCircle, Search, Filter, Loader2, Trash2, ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { AcademicUnitSelector, collectDescendantNames, findNodeByLabel } from "./academic-unit-selector";
 import type { AcademicNode } from "./academic-unit-selector";
-
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from "recharts";
 const API_BASE = "http://localhost:3000/api";
 
 const getStyles = (dk: boolean) => ({
@@ -51,6 +51,8 @@ export function AllStudents() {
   const [rejectReason, setRejectReason] = useState("");
   const [branches, setBranches] = useState<{label: string, id: number}[]>([]);
   const [unitTree, setUnitTree] = useState<AcademicNode[]>([]);
+  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
+  const [massActionLoading, setMassActionLoading] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/university/academic-units/tree`, {
@@ -136,8 +138,44 @@ export function AllStudents() {
       const name = s.user?.name?.toLowerCase() || "";
       if (!name.includes(term) && !branchName.toLowerCase().includes(term)) return false;
     }
+    
     return true;
   });
+
+  const toggleSelectAll = () => {
+    const pendingFiltered = filteredStudents.filter(s => s.registrationStatus === "PENDING").map(s => s.id);
+    if (pendingFiltered.length === 0) return;
+    
+    const allSelected = pendingFiltered.every(id => selectedStudents.includes(id));
+    if (allSelected) {
+      setSelectedStudents([]);
+    } else {
+      setSelectedStudents(pendingFiltered);
+    }
+  };
+
+  const handleMassApprove = async () => {
+    if (selectedStudents.length === 0) return;
+    setMassActionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/university/students/mass-approve`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ studentIds: selectedStudents })
+      });
+      if (res.ok) {
+        toast.success(`${selectedStudents.length} student(s) approved successfully`);
+        setSelectedStudents([]);
+        fetchStudents();
+      } else {
+        toast.error("Failed to approve students");
+      }
+    } catch (e) {
+      toast.error("An error occurred");
+    } finally {
+      setMassActionLoading(false);
+    }
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -161,9 +199,10 @@ export function AllStudents() {
           </div>
         </div>
         
-        {/* Status Filters */}
-        <div className="flex gap-2 mb-6">
-          {["ALL", "PENDING", "APPROVED", "REJECTED"].map((status) => (
+        {/* Status Filters & Mass Action */}
+        <div className="flex gap-2 mb-6 items-center justify-between">
+          <div className="flex gap-2">
+            {["ALL", "PENDING", "APPROVED", "REJECTED"].map((status) => (
             <button
               key={status}
               onClick={() => setFilter(status)}
@@ -176,6 +215,17 @@ export function AllStudents() {
               {status}
             </button>
           ))}
+          </div>
+          {selectedStudents.length > 0 && (
+            <button
+              onClick={handleMassApprove}
+              disabled={massActionLoading}
+              className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              {massActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Mass Approve ({selectedStudents.length})
+            </button>
+          )}
         </div>
         {loading ? (
           <div className="flex items-center justify-center py-8">
@@ -186,6 +236,15 @@ export function AllStudents() {
         <table className="w-full">
           <thead>
             <tr>
+              <th className={`${tableTh} w-10`}>
+                <input 
+                  type="checkbox" 
+                  checked={filteredStudents.filter(s => s.registrationStatus === "PENDING").length > 0 && filteredStudents.filter(s => s.registrationStatus === "PENDING").every(s => selectedStudents.includes(s.id))}
+                  onChange={toggleSelectAll}
+                  className="rounded border-gray-300"
+                  disabled={filteredStudents.filter(s => s.registrationStatus === "PENDING").length === 0}
+                />
+              </th>
               <th className={tableTh}>Name</th>
               <th className={tableTh}>Branch</th>
               <th className={tableTh}>CGPA</th>
@@ -196,9 +255,22 @@ export function AllStudents() {
           </thead>
           <tbody>
             {filteredStudents.length === 0 ? (
-              <tr><td colSpan={6} className={`py-6 text-center ${muted}`}>No students found.</td></tr>
+              <tr><td colSpan={7} className={`py-6 text-center ${muted}`}>No students found.</td></tr>
             ) : filteredStudents.map((s: any, i: number) => (
               <tr key={i}>
+                <td className={tableTd}>
+                  {s.registrationStatus === "PENDING" && (
+                    <input 
+                      type="checkbox" 
+                      checked={selectedStudents.includes(s.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedStudents([...selectedStudents, s.id]);
+                        else setSelectedStudents(selectedStudents.filter(id => id !== s.id));
+                      }}
+                      className="rounded border-gray-300"
+                    />
+                  )}
+                </td>
                 <td className={tableTd}>{s.user?.name || "—"}</td>
                 <td className={tableTd}>
                   <div>{s.placementBranch || s.branch || s.academicUnit?.name || "—"}</div>
@@ -372,13 +444,22 @@ export function PendingJobs() {
   const [universityDeadline, setUniversityDeadline] = useState("");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("deadline_asc");
+  const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
+  const [selectedJobs, setSelectedJobs] = useState<number[]>([]);
+  const [massActionLoading, setMassActionLoading] = useState(false);
 
   const fetchJobs = () => {
     setLoading(true);
     fetch(`${API_BASE}/university/jobs/pending`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => {
+        if (r.status === 403) {
+          toast.error("Access denied. Please log in as a University admin.");
+          return [];
+        }
+        return r.ok ? r.json() : [];
+      })
       .then((data) => {
         const pendingJobs = Array.isArray(data) ? data : data.jobs || [];
         setJobs(pendingJobs);
@@ -421,6 +502,47 @@ export function PendingJobs() {
     }
   };
 
+  const toggleSelectAll = () => {
+    if (selectedJobs.length === filteredJobs.length && selectedJobs.length > 0) {
+      setSelectedJobs([]);
+    } else {
+      setSelectedJobs(filteredJobs.map(j => j.id));
+    }
+  };
+
+  const toggleSelectGroup = (jobIds: number[]) => {
+    const allSelected = jobIds.every(id => selectedJobs.includes(id));
+    if (allSelected) {
+      setSelectedJobs(selectedJobs.filter(id => !jobIds.includes(id)));
+    } else {
+      const newSelected = new Set([...selectedJobs, ...jobIds]);
+      setSelectedJobs(Array.from(newSelected));
+    }
+  };
+
+  const handleMassApprove = async () => {
+    if (selectedJobs.length === 0) return;
+    setMassActionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/university/jobs/mass-approve`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ jobIds: selectedJobs })
+      });
+      if (res.ok) {
+        toast.success(`${selectedJobs.length} job(s) approved successfully`);
+        setSelectedJobs([]);
+        fetchJobs();
+      } else {
+        toast.error("Failed to mass approve jobs");
+      }
+    } catch (e) {
+      toast.error("An error occurred");
+    } finally {
+      setMassActionLoading(false);
+    }
+  };
+
   const filteredJobs = jobs
     .filter(j => {
       if (!search) return true;
@@ -434,6 +556,13 @@ export function PendingJobs() {
       return 0;
     });
 
+  const groupedJobs = filteredJobs.reduce((acc: any, job) => {
+    const compName = job.company?.name || "Unknown Company";
+    if (!acc[compName]) acc[compName] = [];
+    acc[compName].push(job);
+    return acc;
+  }, {});
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -441,16 +570,28 @@ export function PendingJobs() {
         <p className={`text-sm mt-1 ${muted}`}>Review and approve job postings from recruiters.</p>
       </div>
       <div className={card}>
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
             <Search className="w-4 h-4" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search jobs or companies..." className="bg-transparent outline-none w-64" />
           </div>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
-            <option value="deadline_asc">Deadline (Earliest)</option>
-            <option value="deadline_desc">Deadline (Latest)</option>
-            <option value="cgpa_desc">Min CGPA (Highest)</option>
-          </select>
+          <div className="flex gap-2 items-center flex-wrap">
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="deadline_asc">Deadline (Earliest)</option>
+              <option value="deadline_desc">Deadline (Latest)</option>
+              <option value="cgpa_desc">Min CGPA (Highest)</option>
+            </select>
+            {selectedJobs.length > 0 && (
+              <button
+                onClick={handleMassApprove}
+                disabled={massActionLoading}
+                className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                {massActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Mass Approve ({selectedJobs.length})
+              </button>
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -463,68 +604,126 @@ export function PendingJobs() {
             <p className={muted}>{search ? "No jobs match your search." : "No pending job approvals at this time."}</p>
           </div>
         ) : (
-          <table className="w-full">
-            <thead>
-              <tr>
-                <th className={tableTh}>Company</th>
-                <th className={tableTh}>Title</th>
-                <th className={tableTh}>Min CGPA</th>
-                <th className={tableTh}>Deadline</th>
-                <th className={`${tableTh} text-right`}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredJobs.map((j: any, i: number) => (
-                <tr key={i}>
-                  <td className={tableTd}>{j.company?.name || "—"}</td>
-                  <td className={tableTd}>{j.title}</td>
-                  <td className={tableTd}>{j.minCgpa}</td>
-                  <td className={tableTd}>{new Date(j.deadline).toLocaleDateString()}</td>
-                  <td className={`${tableTd} text-right space-x-2`}>
-                    {actionJobId !== j.id && (
-                      <>
-                        <button onClick={() => { setActionJobId(j.id); setActionType("APPROVE"); setUniversityDeadline(""); }} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
-                        <button onClick={() => { setActionJobId(j.id); setActionType("REJECT"); setRejectionReason(""); }} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
-                      </>
-                    )}
-                    {actionJobId === j.id && actionType === "APPROVE" && (
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="text-left w-full max-w-[200px]">
-                          <label className={`block text-[10px] mb-1 ${muted}`}>Set earlier deadline (optional)</label>
-                          <input 
-                            type="date" 
-                            value={universityDeadline}
-                            onChange={(e) => setUniversityDeadline(e.target.value)}
-                            max={new Date(j.deadline).toISOString().split('T')[0]} // Cannot be after recruiter deadline
-                            className={`w-full text-xs px-2 py-1 rounded border outline-none ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => { setActionJobId(null); setActionType(null); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
-                          <button onClick={() => handleUpdateStatus(j.id, "APPROVED", undefined, universityDeadline || undefined)} className={`text-xs px-2 py-1 rounded-md bg-green-600 text-white hover:bg-green-700`}>Confirm</button>
-                        </div>
+          <div className="space-y-4">
+            <div className="flex items-center px-4 py-2 border-b border-gray-100">
+              <input 
+                type="checkbox" 
+                checked={selectedJobs.length > 0 && selectedJobs.length === filteredJobs.length}
+                onChange={toggleSelectAll}
+                className="rounded border-gray-300 mr-3"
+              />
+              <span className={`text-sm font-medium ${dk ? "text-gray-300" : "text-gray-700"}`}>Select All ({filteredJobs.length})</span>
+            </div>
+
+            {Object.keys(groupedJobs).map(company => {
+              const compJobs = groupedJobs[company];
+              const isExpanded = !!expandedCompanies[company];
+              const compJobIds = compJobs.map((j: any) => j.id);
+              const isCompSelected = compJobIds.every((id: number) => selectedJobs.includes(id)) && compJobIds.length > 0;
+
+              return (
+                <div key={company} className={`border rounded-xl overflow-hidden ${dk ? "border-white/10" : "border-gray-200"}`}>
+                  <div 
+                    className={`flex items-center justify-between px-4 py-4 cursor-pointer ${dk ? "bg-white/[0.02] hover:bg-white/[0.04]" : "bg-gray-50 hover:bg-gray-100"}`}
+                    onClick={() => setExpandedCompanies(prev => ({...prev, [company]: !prev[company]}))}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="checkbox" 
+                        checked={isCompSelected}
+                        onChange={(e) => { e.stopPropagation(); toggleSelectGroup(compJobIds); }}
+                        className="rounded border-gray-300"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Building2 className={`w-4 h-4 ${dk ? "text-blue-400" : "text-blue-600"}`} />
+                        <span className={`font-medium text-sm ${heading}`}>{company}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${dk ? "bg-white/10" : "bg-gray-200"}`}>{compJobs.length}</span>
                       </div>
-                    )}
-                    {actionJobId === j.id && actionType === "REJECT" && (
-                      <div className="flex flex-col items-end gap-2">
-                        <input 
-                          type="text" 
-                          placeholder="Reason for rejection" 
-                          value={rejectionReason}
-                          onChange={(e) => setRejectionReason(e.target.value)}
-                          className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
-                        />
-                        <div className="flex gap-2">
-                          <button onClick={() => { setActionJobId(null); setActionType(null); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
-                          <button onClick={() => handleUpdateStatus(j.id, "REJECTED", rejectionReason)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
-                        </div>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""} ${muted}`} />
+                  </div>
+
+                  {isExpanded && (
+                    <div className={`border-t ${dk ? "border-white/10" : "border-gray-200"}`}>
+                      <table className="w-full">
+                        <thead className={dk ? "bg-black/20" : "bg-gray-50/50"}>
+                          <tr>
+                            <th className={`${tableTh} w-10 pl-4`}><span className="sr-only">Select</span></th>
+                            <th className={tableTh}>Title</th>
+                            <th className={tableTh}>Min CGPA</th>
+                            <th className={tableTh}>Deadline</th>
+                            <th className={`${tableTh} text-right pr-4`}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {compJobs.map((j: any, i: number) => (
+                            <tr key={i} className={`border-t ${dk ? "border-white/5" : "border-gray-100"}`}>
+                              <td className={`${tableTd} pl-4`}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedJobs.includes(j.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) setSelectedJobs([...selectedJobs, j.id]);
+                                    else setSelectedJobs(selectedJobs.filter(id => id !== j.id));
+                                  }}
+                                  className="rounded border-gray-300"
+                                />
+                              </td>
+                              <td className={tableTd}>{j.title}</td>
+                              <td className={tableTd}>{j.minCgpa}</td>
+                              <td className={tableTd}>{new Date(j.deadline).toLocaleDateString()}</td>
+                              <td className={`${tableTd} text-right space-x-2 pr-4`}>
+                                {actionJobId !== j.id && (
+                                  <div className="flex justify-end gap-2">
+                                    <button onClick={(e) => { e.stopPropagation(); setActionJobId(j.id); setActionType("APPROVE"); setUniversityDeadline(""); }} className={`text-xs px-2 py-1.5 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setActionJobId(j.id); setActionType("REJECT"); setRejectionReason(""); }} className={`text-xs px-2 py-1.5 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                                  </div>
+                                )}
+                                {actionJobId === j.id && actionType === "APPROVE" && (
+                                  <div className="flex flex-col items-end gap-2">
+                                    <div className="text-left w-full max-w-[200px]">
+                                      <label className={`block text-[10px] mb-1 ${muted}`}>Set earlier deadline (optional)</label>
+                                      <input 
+                                        type="date" 
+                                        value={universityDeadline}
+                                        onChange={(e) => setUniversityDeadline(e.target.value)}
+                                        min={new Date().toISOString().split('T')[0]}
+                                        max={new Date(j.deadline).toISOString().split('T')[0]} // Cannot be after recruiter deadline
+                                        className={`w-full text-xs px-2 py-1 rounded border outline-none ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                                      />
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button onClick={() => { setActionJobId(null); setActionType(null); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
+                                      <button onClick={() => handleUpdateStatus(j.id, "APPROVED", undefined, universityDeadline || undefined)} className={`text-xs px-2 py-1 rounded-md bg-green-600 text-white hover:bg-green-700`}>Confirm</button>
+                                    </div>
+                                  </div>
+                                )}
+                                {actionJobId === j.id && actionType === "REJECT" && (
+                                  <div className="flex flex-col items-end gap-2">
+                                    <input 
+                                      type="text" 
+                                      placeholder="Reason for rejection" 
+                                      value={rejectionReason}
+                                      onChange={(e) => setRejectionReason(e.target.value)}
+                                      className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                                    />
+                                    <div className="flex gap-2">
+                                      <button onClick={() => { setActionJobId(null); setActionType(null); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
+                                      <button onClick={() => handleUpdateStatus(j.id, "REJECTED", rejectionReason)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
@@ -878,6 +1077,8 @@ export function StudentAnalytics() {
 
   if (!stats) return <div className="p-6"><Loader2 className="w-5 h-5 animate-spin" /></div>;
 
+  const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -902,8 +1103,55 @@ export function StudentAnalytics() {
           <p className={`text-xs mt-1 ${muted}`}>Placement Rate</p>
         </div>
       </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className={card}>
+          <h3 className={`text-sm font-medium mb-4 ${heading}`}>Placement by Branch</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.branchStats || []}>
+                <CartesianGrid strokeDasharray="3 3" stroke={dk ? "#333" : "#f1f5f9"} vertical={false} />
+                <XAxis dataKey="branch" tick={{ fontSize: 12, fill: dk ? "#9ca3af" : "#6b7280" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: dk ? "#9ca3af" : "#6b7280" }} axisLine={false} tickLine={false} />
+                <Tooltip 
+                  cursor={{ fill: dk ? '#ffffff10' : '#f8fafc' }}
+                  contentStyle={{ backgroundColor: dk ? '#1f2937' : '#fff', borderRadius: '8px', border: dk ? '1px solid #374151' : '1px solid #e2e8f0' }}
+                />
+                <Bar dataKey="rate" name="Placement Rate (%)" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={32} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        
+        <div className={card}>
+          <h3 className={`text-sm font-medium mb-4 ${heading}`}>Placement Distribution</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'Placed', value: stats.placedStudents },
+                    { name: 'Unplaced', value: stats.unplacedStudents }
+                  ]}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  <Cell fill="#10b981" />
+                  <Cell fill={dk ? "#374151" : "#e2e8f0"} />
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ backgroundColor: dk ? '#1f2937' : '#fff', borderRadius: '8px', border: dk ? '1px solid #374151' : '1px solid #e2e8f0' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
       <div className={card}>
-        <h3 className={`text-sm font-medium mb-4 ${heading}`}>Placement by Branch</h3>
+        <h3 className={`text-sm font-medium mb-4 ${heading}`}>Detailed Branch Statistics</h3>
         <table className="w-full">
           <thead>
             <tr>
@@ -919,7 +1167,14 @@ export function StudentAnalytics() {
                 <td className={tableTd}>{b.branch}</td>
                 <td className={tableTd}>{b.total}</td>
                 <td className={tableTd}>{b.placed}</td>
-                <td className={tableTd}>{b.rate}%</td>
+                <td className={tableTd}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${b.rate}%` }}></div>
+                    </div>
+                    <span className="text-xs">{b.rate}%</span>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -970,8 +1225,27 @@ export function RecruiterAnalytics() {
           <p className={`text-xs mt-1 ${muted}`}>Total Applications</p>
         </div>
       </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className={card}>
+          <h3 className={`text-sm font-medium mb-4 ${heading}`}>Top Hiring Companies</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.topCompanies || []} layout="vertical" margin={{ left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={dk ? "#333" : "#f1f5f9"} horizontal={true} vertical={false} />
+                <XAxis type="number" tick={{ fontSize: 12, fill: dk ? "#9ca3af" : "#6b7280" }} axisLine={false} tickLine={false} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: dk ? "#9ca3af" : "#6b7280" }} axisLine={false} tickLine={false} width={100} />
+                <Tooltip 
+                  cursor={{ fill: dk ? '#ffffff10' : '#f8fafc' }}
+                  contentStyle={{ backgroundColor: dk ? '#1f2937' : '#fff', borderRadius: '8px', border: dk ? '1px solid #374151' : '1px solid #e2e8f0' }}
+                />
+                <Bar dataKey="jobsPosted" name="Jobs Posted" fill="#10b981" radius={[0, 4, 4, 0]} barSize={24} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
       <div className={card}>
-        <h3 className={`text-sm font-medium mb-4 ${heading}`}>Top Hiring Companies</h3>
+        <h3 className={`text-sm font-medium mb-4 ${heading}`}>Company List Overview</h3>
         <table className="w-full">
           <thead>
             <tr>
@@ -1437,24 +1711,34 @@ export function PendingApplications() {
   const [apps, setApps] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("match_desc");
   const [minMatch, setMinMatch] = useState("");
   const [selectedApps, setSelectedApps] = useState<number[]>([]);
   const [actionAppId, setActionAppId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  
+  const [viewMode, setViewMode] = useState<"grouped_jobs" | "grouped_students">("grouped_jobs");
+  const [expandedRecruiters, setExpandedRecruiters] = useState<Record<string, boolean>>({});
+  const [expandedJobs, setExpandedJobs] = useState<Record<string, boolean>>({});
 
   const fetchApps = () => {
     setLoading(true);
     fetch(`${API_BASE}/university/applications/pending`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => {
+        if (r.status === 403) {
+          toast.error("Access denied. Please log in as a University admin.");
+          return [];
+        }
+        return r.ok ? r.json() : [];
+      })
       .then((data) => {
         const applications = Array.isArray(data) ? data : data.applications || [];
         setApps(applications.map((a: any) => ({
           id: a.id,
           student: a.student?.user?.name || "—",
           job: a.job?.title || "—",
+          company: a.job?.company?.name || "—",
           match: Math.round(a.matchScore || 0),
           status: a.status,
         })));
@@ -1468,24 +1752,36 @@ export function PendingApplications() {
   }, []);
 
   const minMatchNum = minMatch ? Number(minMatch) : 0;
-  const filteredApps = apps
-    .filter(a => {
-      if (minMatchNum > 0 && a.match < minMatchNum) return false;
-      if (search && !a.student.toLowerCase().includes(search.toLowerCase()) && !a.job.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortBy === "match_desc") return b.match - a.match;
-      if (sortBy === "match_asc") return a.match - b.match;
-      if (sortBy === "student_asc") return a.student.localeCompare(b.student);
-      return 0;
-    });
+  const filteredApps = apps.filter(a => {
+    if (minMatchNum > 0 && a.match < minMatchNum) return false;
+    if (search && !a.student.toLowerCase().includes(search.toLowerCase()) && !a.job.toLowerCase().includes(search.toLowerCase()) && !a.company.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  // Grouping Logic
+  const groupedByCompany = filteredApps.reduce((acc: any, app) => {
+    if (!acc[app.company]) acc[app.company] = { apps: [], jobs: {} };
+    acc[app.company].apps.push(app);
+    if (!acc[app.company].jobs[app.job]) acc[app.company].jobs[app.job] = [];
+    acc[app.company].jobs[app.job].push(app);
+    return acc;
+  }, {});
 
   const toggleSelectAll = () => {
     if (selectedApps.length === filteredApps.length && selectedApps.length > 0) {
       setSelectedApps([]);
     } else {
       setSelectedApps(filteredApps.map(a => a.id));
+    }
+  };
+
+  const toggleSelectGroup = (appIds: number[]) => {
+    const allSelected = appIds.every(id => selectedApps.includes(id));
+    if (allSelected) {
+      setSelectedApps(selectedApps.filter(id => !appIds.includes(id)));
+    } else {
+      const newSelected = new Set([...selectedApps, ...appIds]);
+      setSelectedApps(Array.from(newSelected));
     }
   };
 
@@ -1505,7 +1801,6 @@ export function PendingApplications() {
         toast.error("Failed to forward applications");
       }
     } catch (e) {
-      console.error(e);
       toast.error("An error occurred");
     }
   };
@@ -1546,23 +1841,22 @@ export function PendingApplications() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className={`text-2xl tracking-tight ${heading}`}>Pending Applications</h1>
-        <p className={`text-sm mt-1 ${muted}`}>Review student applications before forwarding them to recruiters.</p>
+        <p className={`text-sm mt-1 ${muted}`}>Review student applications grouped by recruiter.</p>
       </div>
       <div className={card}>
-        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
+        <div className="flex justify-between items-center mb-6 flex-col md:flex-row gap-4">
+          <div className={`w-full md:w-auto flex items-center gap-2 px-3 py-2 rounded-lg text-sm border ${dk ? "bg-white/5 border-white/10 text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}>
             <Search className="w-4 h-4" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student or job..." className="bg-transparent outline-none w-64" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student, job, company..." className="bg-transparent outline-none w-full md:w-64" />
           </div>
-          <div className="flex gap-2 flex-wrap items-center">
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`text-sm px-3 py-1.5 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
-              <option value="match_desc">Match Score ↓</option>
-              <option value="match_asc">Match Score ↑</option>
-              <option value="student_asc">Student A-Z</option>
+          <div className="flex gap-3 flex-wrap items-center w-full md:w-auto">
+            <select value={viewMode} onChange={(e) => setViewMode(e.target.value as any)} className={`text-sm px-3 py-2 rounded-lg border outline-none ${dk ? "bg-black/50 border-white/10 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+              <option value="grouped_jobs">Group by Job</option>
+              <option value="grouped_students">All Students by Recruiter</option>
             </select>
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-sm ${dk ? "border-white/10" : "border-gray-300"}`}>
-              <span className={`text-xs whitespace-nowrap ${muted}`}>Min:</span>
-              <select value={["50","60","70","80","90"].includes(minMatch) ? minMatch : ""} onChange={(e) => setMinMatch(e.target.value)} className={`text-xs bg-transparent outline-none ${dk ? "text-white" : "text-gray-900"}`}>
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${dk ? "border-white/10" : "border-gray-300"}`}>
+              <span className={`text-xs font-medium whitespace-nowrap ${muted}`}>Min Match:</span>
+              <select value={["50","60","70","80","90"].includes(minMatch) ? minMatch : ""} onChange={(e) => setMinMatch(e.target.value)} className={`text-xs font-medium bg-transparent outline-none ${dk ? "text-white" : "text-gray-900"}`}>
                 <option value="">Any</option>
                 <option value="50">≥50%</option>
                 <option value="60">≥60%</option>
@@ -1570,10 +1864,9 @@ export function PendingApplications() {
                 <option value="80">≥80%</option>
                 <option value="90">≥90%</option>
               </select>
-              <input type="number" min="0" max="100" placeholder="custom" value={["50","60","70","80","90",""].includes(minMatch) ? "" : minMatch} onChange={(e) => setMinMatch(e.target.value)} className={`w-12 text-xs bg-transparent outline-none text-center ${dk ? "text-white placeholder:text-gray-600" : "text-gray-900 placeholder:text-gray-400"}`} />
             </div>
             {selectedApps.length > 0 && (
-              <button onClick={handleBulkAction} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition-colors">
+              <button onClick={handleBulkAction} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">
                 Forward Selected ({selectedApps.length})
               </button>
             )}
@@ -1585,70 +1878,183 @@ export function PendingApplications() {
             <Loader2 className="w-5 h-5 animate-spin" />
             <span className={`ml-2 text-sm ${muted}`}>Loading applications…</span>
           </div>
+        ) : filteredApps.length === 0 ? (
+          <div className={`py-6 text-center ${muted}`}>No pending applications found.</div>
         ) : (
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th className={`${tableTh} w-10`}>
-                <input 
-                  type="checkbox" 
-                  checked={selectedApps.length > 0 && selectedApps.length === filteredApps.length}
-                  onChange={toggleSelectAll}
-                  className="rounded border-gray-300"
-                />
-              </th>
-              <th className={tableTh}>Student</th>
-              <th className={tableTh}>Job</th>
-              <th className={tableTh}>Match Score</th>
-              <th className={`${tableTh} text-right`}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredApps.length === 0 ? (
-              <tr><td colSpan={5} className={`py-6 text-center ${muted}`}>No pending applications found.</td></tr>
-            ) : filteredApps.map((a: any, i: number) => (
-              <tr key={i}>
-                <td className={tableTd}>
-                  <input 
-                    type="checkbox" 
-                    checked={selectedApps.includes(a.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedApps([...selectedApps, a.id]);
-                      else setSelectedApps(selectedApps.filter(id => id !== a.id));
-                    }}
-                    className="rounded border-gray-300"
-                  />
-                </td>
-                <td className={tableTd}>{a.student}</td>
-                <td className={tableTd}>{a.job}</td>
-                <td className={tableTd}>{a.match}%</td>
-                <td className={`${tableTd} text-right space-x-2`}>
-                  {actionAppId !== a.id && (
-                    <>
-                      <button onClick={() => handleApprove(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
-                      <button onClick={() => setActionAppId(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
-                    </>
-                  )}
-                  {actionAppId === a.id && (
-                    <div className="flex flex-col items-end gap-2">
-                      <input 
-                        type="text" 
-                        placeholder="Reason for rejection" 
-                        value={rejectReason}
-                        onChange={(e) => setRejectReason(e.target.value)}
-                        className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
-                      />
-                      <div className="flex gap-2">
-                        <button onClick={() => { setActionAppId(null); setRejectReason(""); }} className={`text-xs px-2 py-1 text-gray-500`}>Cancel</button>
-                        <button onClick={() => handleReject(a.id)} className={`text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700`}>Confirm</button>
+          <div className="space-y-4">
+            <div className="flex items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+              <input 
+                type="checkbox" 
+                checked={selectedApps.length > 0 && selectedApps.length === filteredApps.length}
+                onChange={toggleSelectAll}
+                className="rounded border-gray-300 mr-3"
+              />
+              <span className={`text-sm font-medium ${dk ? "text-gray-300" : "text-gray-700"}`}>Select All ({filteredApps.length})</span>
+            </div>
+
+            {Object.keys(groupedByCompany).map(company => {
+              const compData = groupedByCompany[company];
+              const isCompExpanded = !!expandedRecruiters[company];
+              const compAppIds = compData.apps.map((a: any) => a.id);
+              const isCompSelected = compAppIds.every((id: number) => selectedApps.includes(id)) && compAppIds.length > 0;
+
+              return (
+                <div key={company} className={`border rounded-xl overflow-hidden ${dk ? "border-white/10" : "border-gray-200"}`}>
+                  <div className={`flex items-center px-6 py-4 cursor-pointer ${dk ? "bg-white/[0.02] hover:bg-white/[0.04]" : "bg-gray-50 hover:bg-gray-100"}`}>
+                    <input 
+                      type="checkbox" 
+                      checked={isCompSelected}
+                      onChange={(e) => { e.stopPropagation(); toggleSelectGroup(compAppIds); }}
+                      className="rounded border-gray-300 mr-4"
+                    />
+                    <div className="flex-1 flex items-center justify-between" onClick={() => setExpandedRecruiters(prev => ({...prev, [company]: !prev[company]}))}>
+                      <div className="flex items-center gap-3">
+                        <Building2 className={`w-5 h-5 ${dk ? "text-blue-400" : "text-blue-600"}`} />
+                        <span className={`font-medium text-[15px] ${heading}`}>{company}</span>
+                        <span className={`text-xs px-2.5 py-1 rounded-full ${dk ? "bg-white/10" : "bg-gray-200"}`}>{compAppIds.length}</span>
                       </div>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${isCompExpanded ? "rotate-180" : ""} ${muted}`} />
+                    </div>
+                  </div>
+
+                  {isCompExpanded && (
+                    <div className={`border-t ${dk ? "border-white/10" : "border-gray-200"}`}>
+                      {viewMode === "grouped_students" ? (
+                        <table className="w-full">
+                          <thead className={dk ? "bg-black/20" : "bg-gray-50/50"}>
+                            <tr>
+                              <th className={`${tableTh} w-12 pl-14`}></th>
+                              <th className={tableTh}>Student</th>
+                              <th className={tableTh}>Job</th>
+                              <th className={tableTh}>Match Score</th>
+                              <th className={`${tableTh} text-right pr-6`}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compData.apps.map((a: any) => (
+                              <tr key={a.id} className={`border-t ${dk ? "border-white/5" : "border-gray-100"}`}>
+                                <td className={`${tableTd} pl-14`}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={selectedApps.includes(a.id)}
+                                    onChange={() => toggleSelectGroup([a.id])}
+                                    className="rounded border-gray-300"
+                                  />
+                                </td>
+                                <td className={tableTd}>{a.student}</td>
+                                <td className={tableTd}>{a.job}</td>
+                                <td className={tableTd}>{a.match}%</td>
+                                <td className={`${tableTd} text-right space-x-2`}>
+                                  {actionAppId !== a.id && (
+                                    <>
+                                      <button onClick={() => handleApprove(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                                      <button onClick={() => setActionAppId(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                                    </>
+                                  )}
+                                  {actionAppId === a.id && (
+                                    <div className="flex flex-col items-end gap-2">
+                                      <input 
+                                        type="text" 
+                                        placeholder="Reason for rejection" 
+                                        value={rejectReason}
+                                        onChange={(e) => setRejectReason(e.target.value)}
+                                        className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                                      />
+                                      <div className="flex gap-2">
+                                        <button onClick={() => { setActionAppId(null); setRejectReason(""); }} className="text-xs px-2 py-1 text-gray-500">Cancel</button>
+                                        <button onClick={() => handleReject(a.id)} className="text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700">Confirm</button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div>
+                          {Object.keys(compData.jobs).map(jobName => {
+                            const jobApps = compData.jobs[jobName];
+                            const jobKey = `${company}-${jobName}`;
+                            const isJobExpanded = !!expandedJobs[jobKey];
+                            const jobAppIds = jobApps.map((a: any) => a.id);
+                            const isJobSelected = jobAppIds.every((id: number) => selectedApps.includes(id)) && jobAppIds.length > 0;
+
+                            return (
+                              <div key={jobName} className={`border-b last:border-b-0 ${dk ? "border-white/5" : "border-gray-100"}`}>
+                                <div className={`flex items-center px-8 py-2.5 cursor-pointer ${dk ? "hover:bg-white/[0.02]" : "hover:bg-gray-50/50"}`}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={isJobSelected}
+                                    onChange={(e) => { e.stopPropagation(); toggleSelectGroup(jobAppIds); }}
+                                    className="rounded border-gray-300 mr-3"
+                                  />
+                                  <div className="flex-1 flex items-center justify-between" onClick={() => setExpandedJobs(prev => ({...prev, [jobKey]: !prev[jobKey]}))}>
+                                    <div className="flex items-center gap-2">
+                                      <Briefcase className={`w-3.5 h-3.5 ${dk ? "text-gray-400" : "text-gray-500"}`} />
+                                      <span className={`font-medium text-sm ${dk ? "text-gray-300" : "text-gray-800"}`}>{jobName}</span>
+                                      <span className={`text-xs px-1.5 py-0.5 rounded ${dk ? "bg-white/5 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{jobAppIds.length}</span>
+                                    </div>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isJobExpanded ? "rotate-180" : ""} ${muted}`} />
+                                  </div>
+                                </div>
+
+                                {isJobExpanded && (
+                                  <div className={`border-t bg-black/5 ${dk ? "border-white/5" : "border-gray-50"}`}>
+                                    <table className="w-full">
+                                      <tbody>
+                                        {jobApps.map((a: any) => (
+                                          <tr key={a.id} className={`border-b last:border-0 ${dk ? "border-white/5" : "border-gray-100"}`}>
+                                            <td className={`${tableTd} w-12 pl-14`}>
+                                              <input 
+                                                type="checkbox" 
+                                                checked={selectedApps.includes(a.id)}
+                                                onChange={() => toggleSelectGroup([a.id])}
+                                                className="rounded border-gray-300"
+                                              />
+                                            </td>
+                                            <td className={tableTd}>{a.student}</td>
+                                            <td className={tableTd}>{a.match}%</td>
+                                            <td className={`${tableTd} text-right space-x-2`}>
+                                              {actionAppId !== a.id && (
+                                                <>
+                                                  <button onClick={() => handleApprove(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-green-500/20 text-green-400 hover:bg-green-500/30" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>Approve</button>
+                                                  <button onClick={() => setActionAppId(a.id)} className={`text-xs px-2 py-1 rounded-md ${dk ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-100 text-red-700 hover:bg-red-200"}`}>Reject</button>
+                                                </>
+                                              )}
+                                              {actionAppId === a.id && (
+                                                <div className="flex flex-col items-end gap-2">
+                                                  <input 
+                                                    type="text" 
+                                                    placeholder="Reason for rejection" 
+                                                    value={rejectReason}
+                                                    onChange={(e) => setRejectReason(e.target.value)}
+                                                    className={`text-xs px-2 py-1 rounded border outline-none w-full max-w-[200px] ${dk ? "bg-black/50 border-white/20 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                                                  />
+                                                  <div className="flex gap-2">
+                                                    <button onClick={() => { setActionAppId(null); setRejectReason(""); }} className="text-xs px-2 py-1 text-gray-500">Cancel</button>
+                                                    <button onClick={() => handleReject(a.id)} className="text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700">Confirm</button>
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

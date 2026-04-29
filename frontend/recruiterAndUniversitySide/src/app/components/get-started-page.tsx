@@ -132,7 +132,7 @@ export function GetStartedPage() {
                 ))}
               </ul>
 
-              <button className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-full text-sm font-medium hover:bg-blue-700 transition-colors">
+              <button onClick={() => navigate("/register-company")} className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-full text-sm font-medium hover:bg-blue-700 transition-colors">
                 Start Free
                 <ArrowRight className="w-4 h-4" />
               </button>

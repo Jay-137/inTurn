@@ -45,9 +45,13 @@ export function Layout() {
     if (isAuthenticated && authUser) {
       studentApi.getProfile(authUser.id)
         .then(setStudentProfile)
-        .catch(err => {
+        .catch((err: any) => {
+          const msg = err?.message?.toLowerCase() || "";
+          // Expected if the profile hasn't been created yet
+          if (msg.includes("404") || msg.includes("not found")) {
+            return;
+          }
           console.error("Failed to sync profile:", err);
-          // If 404, it just means they haven't set up academic data yet, which is fine
         });
     }
   }, [isAuthenticated, authUser, setStudentProfile]);

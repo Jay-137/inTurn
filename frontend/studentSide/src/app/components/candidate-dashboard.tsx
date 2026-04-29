@@ -164,7 +164,7 @@ export function CandidateDashboard() {
     role: app.job?.title || "Opportunity",
     title: app.job?.title || "Opportunity",
     location: app.job?.location || "Remote",
-    tags: Array.isArray(app.job?.tags) ? app.job.tags : ["Shortlisted"],
+    tags: Array.isArray(app.job?.tags) && app.job.tags.length > 0 ? app.job.tags : ["General"],
     salary: app.job?.salary || "Unspecified",
     type: app.job?.type || "Full-time",
     deadline: app.job?.deadline || new Date().toISOString(),
@@ -728,7 +728,7 @@ export function CandidateDashboard() {
                             {t}
                           </span>
                         ))}
-                        <Badge variant="success">{job.applicationStatus || "SHORTLISTED"}</Badge>
+                        <Badge variant="success">{(job.applicationStatus || "SHORTLISTED").replace(/_/g, " ").replace(/BY /gi, "by ").split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")}</Badge>
                         {job.hasRealScore && studentProfile && job.match >= 88 ? (
                           <Badge variant="priority">
                             <Star className="w-3 h-3 mr-1" /> Top Shortlist

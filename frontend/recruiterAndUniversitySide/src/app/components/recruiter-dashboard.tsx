@@ -410,7 +410,7 @@ export function RecruiterDashboard() {
               <div className="space-y-0">
                 {(dashboardData?.activeJobs || []).map((job: any, i: number) => (
                   <div
-                    key={job.title}
+                    key={job.id || i}
                     className={`py-4 ${i < (dashboardData?.activeJobs || []).length - 1 ? `border-b ${dk ? "border-white/5" : "border-gray-100"}` : ""}`}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -481,8 +481,8 @@ export function RecruiterDashboard() {
                   <button onClick={() => setActiveNav("shortlisted")} className="text-xs text-blue-600 hover:text-blue-500 transition-colors cursor-pointer">View All</button>
                 </div>
                 <div className="space-y-3">
-                  {(dashboardData?.recentApplicants || []).map((a: any) => (
-                    <div key={a.name} className="flex items-center gap-3">
+                  {(dashboardData?.recentApplicants || []).map((a: any, i: number) => (
+                    <div key={a.id || i} className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-full ${a.color} flex items-center justify-center text-white text-xs shrink-0`}>
                         {a.name[0]}
                       </div>

@@ -3,6 +3,7 @@ import { Card, GradientButton, Badge, MatchScoreCircle } from "./shared";
 import { motion, AnimatePresence } from "motion/react";
 import { useApp } from "./app-context";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   Briefcase, MapPin, Clock, Search,
   Building2, ArrowRight, CheckCircle2, X,
@@ -28,191 +29,104 @@ type EnrichedJob = Job & {
 function JobCard({
   job,
   isApplied,
-  isExpanded,
-  onToggleExpand,
-  onApply,
-  onCheckEligibility,
-  applying,
-  checking,
+  onClick,
   preferredRoles,
   showMatchingTags,
   applicationDetails,
-  isPlaced,
 }: {
   job: EnrichedJob;
   isApplied: boolean;
-  isExpanded: boolean;
-  onToggleExpand: () => void;
-  onApply: () => void;
-  onCheckEligibility: () => void;
-  applying: boolean;
-  checking: boolean;
+  onClick: () => void;
   preferredRoles?: string[];
   showMatchingTags?: boolean;
   applicationDetails?: any;
-  isPlaced?: boolean;
 }) {
   const isDeadlinePassed = new Date() > new Date(job.deadline);
-  const hasScore = job.match !== null;
-  const isMatched = showMatchingTags && hasScore && (job.match ?? 0) >= 70 && preferredRoles?.some(r => r.toLowerCase() === job.role.toLowerCase());
+  
+  // Match Snapshot logic
+  let displayScore = null;
+  if (isApplied && applicationDetails?.matchScore != null) {
+    displayScore = applicationDetails.matchScore <= 1 
+      ? Math.round(applicationDetails.matchScore * 100) 
+      : Math.round(applicationDetails.matchScore);
+  } else if (job.match !== null) {
+    displayScore = job.match;
+  }
+  
+  const hasScore = displayScore !== null;
+  const isMatched = showMatchingTags && hasScore && (displayScore ?? 0) >= 70 && preferredRoles?.some(r => r.toLowerCase() === job.role.toLowerCase());
+
+  // Determine badge for applied status
+  let appliedBadgeVariant = "success" as any;
+  let appliedBadgeText = "Applied";
+  
+  if (isApplied) {
+    if (applicationDetails?.status?.includes("REJECTED")) {
+      appliedBadgeVariant = "warning";
+      appliedBadgeText = applicationDetails.status === "REJECTED_BY_UNIVERSITY" ? "Rejected by University" : "Rejected";
+    } else if (applicationDetails?.status === "PENDING_REVIEW") {
+      appliedBadgeVariant = "info";
+      appliedBadgeText = "Pending Review";
+    } else if (applicationDetails?.status === "FORWARDED_TO_RECRUITER") {
+      appliedBadgeVariant = "success";
+      appliedBadgeText = "Forwarded to Recruiter";
+    } else if (applicationDetails?.status === "SHORTLISTED") {
+      appliedBadgeVariant = "success";
+      appliedBadgeText = "Shortlisted";
+    } else if (applicationDetails?.status === "OFFERED") {
+      appliedBadgeVariant = "success";
+      appliedBadgeText = "Offered";
+    } else if (applicationDetails?.status) {
+      appliedBadgeText = applicationDetails.status.replace(/_/g, " ");
+    }
+  }
 
   return (
-    <Card hover className={`cursor-pointer ${isMatched ? "!border-indigo-200 !bg-indigo-50/20" : ""}`}>
-      <div onClick={onToggleExpand}>
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shrink-0">
-              <Building2 className="w-6 h-6 text-indigo-600" />
+    <Card hover className={`cursor-pointer ${isMatched ? "!border-indigo-200 !bg-indigo-50/20" : ""}`} onClick={onClick}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shrink-0">
+            <Building2 className="w-6 h-6 text-indigo-600" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-gray-900">{job.title}</h3>
+              {isMatched && <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Matched</Badge>}
+              {isApplied && (
+                <Badge variant={appliedBadgeVariant}>
+                  {appliedBadgeText}
+                </Badge>
+              )}
+              {isDeadlinePassed && <Badge variant="warning"><Clock className="w-3 h-3 mr-1" /> Closed</Badge>}
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-gray-900">{job.title}</h3>
-                {isMatched && <Badge variant="success"><CheckCircle2 className="w-3 h-3 mr-1" /> Matched</Badge>}
-                {isApplied && (
-                  <Badge variant={
-                    applicationDetails?.status?.includes("REJECTED") ? "warning" :
-                    applicationDetails?.status === "PENDING_REVIEW" ? "info" :
-                    "success"
-                  }>
-                    {applicationDetails?.status === "REJECTED_BY_UNIVERSITY" ? "Rejected by University" :
-                     applicationDetails?.status === "PENDING_REVIEW" ? "Pending University Review" :
-                     applicationDetails?.status ? applicationDetails.status.replace(/_/g, " ") : "Applied"}
-                  </Badge>
-                )}
-                {isDeadlinePassed && <Badge variant="warning"><Clock className="w-3 h-3 mr-1" /> Closed</Badge>}
-              </div>
-              <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
-                <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {job.location}</span>
-                <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {job.posted}</span>
-                <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" /> {job.type}</span>
-              </div>
+            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {job.location}</span>
+              <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {job.posted}</span>
+              <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" /> {job.type}</span>
             </div>
           </div>
-          {/* Only show score circle AFTER user has checked eligibility */}
-          {hasScore ? (
-            <MatchScoreCircle score={job.match!} size={56} />
-          ) : (
-            <div className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100 flex items-center gap-1 shrink-0">
-              <Sparkles className="w-3 h-3" /> Not checked
-            </div>
-          )}
         </div>
-
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          {job.tags.map((t) => (
-            <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{t}</span>
-          ))}
-          <span className="text-xs text-gray-500 ml-2">{job.salary}</span>
-        </div>
-
-        <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-          <span>Min CGPA: <strong className="text-gray-700">{job.minCgpa}</strong></span>
-          <span>Max Backlogs: <strong className="text-gray-700">{job.maxBacklogs}</strong></span>
-          <span>Deadline: <strong className="text-gray-700">{new Date(job.deadline).toLocaleDateString()}</strong></span>
-        </div>
+        {hasScore ? (
+          <MatchScoreCircle score={displayScore!} size={56} />
+        ) : (
+          <div className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100 flex items-center gap-1 shrink-0">
+            <Sparkles className="w-3 h-3" /> Not checked
+          </div>
+        )}
       </div>
 
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="pt-4 mt-4 border-t border-gray-100">
-              <p className="text-sm text-gray-600 mb-4">{job.description}</p>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        {job.tags.map((t) => (
+          <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">{t}</span>
+        ))}
+        <span className="text-xs text-gray-500 ml-2">{job.salary}</span>
+      </div>
 
-              {applicationDetails?.status === "REJECTED_BY_UNIVERSITY" && applicationDetails?.universityRemarks && (
-                <div className="mb-4 text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2 flex items-center gap-2 border border-red-100">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span><strong>University Remarks:</strong> {applicationDetails.universityRemarks}</span>
-                </div>
-              )}
-
-              {/* Eligibility Feedback (only shown after checking) */}
-              {job.feedback.length > 0 && (
-                <div className="mb-4">
-                  <h4 className="text-sm text-gray-900 mb-2">Match Breakdown</h4>
-                  <div className="space-y-1.5">
-                    {job.feedback.map((msg, idx) => (
-                      <div key={idx} className={`text-xs p-2.5 rounded-lg flex items-start gap-2 ${
-                        msg.startsWith("✓")
-                          ? "bg-emerald-50 text-emerald-700"
-                          : msg.startsWith("~")
-                            ? "bg-amber-50 text-amber-700"
-                            : msg.startsWith("✗")
-                              ? "bg-red-50 text-red-700"
-                              : "bg-gray-50 text-gray-600"
-                      }`}>
-                        {msg.startsWith("✓") ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        ) : msg.startsWith("~") ? (
-                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        ) : msg.startsWith("✗") ? (
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        ) : (
-                          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        )}
-                        <span>{msg}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {hasScore && (
-                <p className="text-xs text-gray-400 mb-4 italic">
-                  * Match score is calculated based on skill priorities set by the recruiter.
-                </p>
-              )}
-
-              {isPlaced ? (
-                <div className="flex items-center gap-2 text-sm text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-100">
-                  <ShieldCheck className="w-4 h-4" />
-                  You are placed. Applications are disabled.
-                </div>
-              ) : !isApplied && !isDeadlinePassed ? (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <GradientButton size="sm" onClick={onApply} className={applying ? "opacity-70 pointer-events-none" : ""}>
-                      {applying ? (
-                        <><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Applying…</>
-                      ) : (
-                        <>Apply Now <ArrowRight className="w-4 h-4 inline ml-1" /></>
-                      )}
-                    </GradientButton>
-                    <GradientButton
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCheckEligibility();
-                      }}
-                      className={checking ? "opacity-70 pointer-events-none" : ""}
-                    >
-                      {checking ? (
-                        <><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Checking…</>
-                      ) : (
-                        <><Sparkles className="w-4 h-4 inline mr-1" /> {hasScore ? "Recheck" : "Check Eligibility"}</>
-                      )}
-                    </GradientButton>
-                  </div>
-                </div>
-              ) : isDeadlinePassed ? (
-                <div className="flex items-center gap-2 text-sm text-amber-600">
-                  <Clock className="w-4 h-4" /> Application deadline has passed
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-emerald-600">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Application submitted successfully
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+        <span>Min CGPA: <strong className="text-gray-700">{job.minCgpa}</strong></span>
+        <span>Max Backlogs: <strong className="text-gray-700">{job.maxBacklogs}</strong></span>
+        <span>Deadline: <strong className="text-gray-700">{new Date(job.deadline).toLocaleDateString()}</strong></span>
+      </div>
     </Card>
   );
 }
@@ -228,7 +142,7 @@ export function JobMatches() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
-  const [expandedJob, setExpandedJob] = useState<number | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [applyingJob, setApplyingJob] = useState<number | null>(null);
   const [applyError, setApplyError] = useState<Record<number, string>>({});
   const [activeTab, setActiveTab] = useState<"matches" | "all">("matches");
@@ -256,6 +170,12 @@ export function JobMatches() {
    * 3. Extract the score for this specific job
    */
   const handleCheckEligibility = async (jobId: number) => {
+    if (!studentProfile) {
+      toast.error("Please complete your Profile Setup before checking eligibility.");
+      navigate("/student/manage-profile");
+      return;
+    }
+
     setCheckingJob(jobId);
     setCheckError((prev) => ({ ...prev, [jobId]: "" }));
     try {
@@ -313,13 +233,19 @@ export function JobMatches() {
   });
 
   const handleApply = async (jobId: number) => {
+    if (!studentProfile) {
+      toast.error("Please complete your Profile Setup before applying.");
+      navigate("/student/manage-profile");
+      return;
+    }
+
     setApplyingJob(jobId);
     setApplyError({});
     try {
       const res = await jobApi.applyForJob(jobId);
       addAppliedJob(String(jobId));
       setShowConfirm(null);
-      setExpandedJob(null);
+      setSelectedJobId(null);
       if (res.application.matchScore !== null) {
         const score = Math.round(res.application.matchScore * 100);
         console.log(`Backend match score for job ${jobId}: ${score}%`);
@@ -466,16 +392,10 @@ export function JobMatches() {
                     <JobCard
                       job={job}
                       isApplied={appliedJobs.includes(String(job.id))}
-                      isExpanded={expandedJob === job.id}
-                      onToggleExpand={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
-                      onApply={() => setShowConfirm(job.id)}
-                      onCheckEligibility={() => handleCheckEligibility(job.id)}
-                      applying={applyingJob === job.id}
-                      checking={checkingJob === job.id}
+                      onClick={() => setSelectedJobId(job.id)}
                       preferredRoles={preferredRoles}
                       showMatchingTags
                       applicationDetails={applicationsMap[String(job.id)]}
-                      isPlaced={isPlaced}
                     />
                   </motion.div>
                 ))}
@@ -547,16 +467,10 @@ export function JobMatches() {
                 <JobCard
                   job={job}
                   isApplied={appliedJobs.includes(String(job.id))}
-                  isExpanded={expandedJob === job.id}
-                  onToggleExpand={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
-                  onApply={() => setShowConfirm(job.id)}
-                  onCheckEligibility={() => handleCheckEligibility(job.id)}
-                  applying={applyingJob === job.id}
-                  checking={checkingJob === job.id}
+                  onClick={() => setSelectedJobId(job.id)}
                   preferredRoles={preferredRoles}
                   showMatchingTags
                   applicationDetails={applicationsMap[String(job.id)]}
-                  isPlaced={isPlaced}
                 />
               </motion.div>
             ))}
@@ -570,6 +484,198 @@ export function JobMatches() {
           </div>
         </div>
       )}
+
+      {/* Job Details Modal */}
+      <AnimatePresence>
+        {selectedJobId !== null && (
+          <motion.div
+            key="job-detail-modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4"
+            onClick={() => setSelectedJobId(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col"
+            >
+              {(() => {
+                const job = enrichedJobs.find(j => j.id === selectedJobId);
+                if (!job) return null;
+                const isApplied = appliedJobs.includes(String(job.id));
+                const applicationDetails = applicationsMap[String(job.id)];
+                const isDeadlinePassed = new Date() > new Date(job.deadline);
+                
+                let displayScore = null;
+                if (isApplied && applicationDetails?.matchScore != null) {
+                  displayScore = applicationDetails.matchScore <= 1 
+                    ? Math.round(applicationDetails.matchScore * 100) 
+                    : Math.round(applicationDetails.matchScore);
+                } else if (job.match !== null) {
+                  displayScore = job.match;
+                }
+                const hasScore = displayScore !== null;
+
+                return (
+                  <>
+                    <div className="p-6 border-b border-gray-100 flex items-start justify-between sticky top-0 bg-white z-10">
+                      <div className="flex gap-4">
+                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center shrink-0">
+                          <Building2 className="w-7 h-7 text-indigo-600" />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-900">{job.title}</h2>
+                          <div className="flex items-center gap-3 mt-1.5 text-sm text-gray-500">
+                            <span className="flex items-center gap-1"><MapPin className="w-4 h-4" /> {job.location}</span>
+                            <span className="flex items-center gap-1"><Briefcase className="w-4 h-4" /> {job.type}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={() => setSelectedJobId(null)} className="text-gray-400 hover:text-gray-600 p-2 bg-gray-50 rounded-full">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="p-6 flex-1">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                        <div className="bg-gray-50 p-3 rounded-xl">
+                          <p className="text-xs text-gray-500 mb-1">Min CGPA</p>
+                          <p className="font-medium text-gray-900">{job.minCgpa}</p>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded-xl">
+                          <p className="text-xs text-gray-500 mb-1">Max Backlogs</p>
+                          <p className="font-medium text-gray-900">{job.maxBacklogs}</p>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded-xl">
+                          <p className="text-xs text-gray-500 mb-1">Salary</p>
+                          <p className="font-medium text-gray-900">{job.salary}</p>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded-xl">
+                          <p className="text-xs text-gray-500 mb-1">Deadline</p>
+                          <p className="font-medium text-gray-900">{new Date(job.deadline).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+
+                      <div className="mb-8">
+                        <h3 className="text-sm font-semibold text-gray-900 mb-3">Description</h3>
+                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{job.description}</p>
+                      </div>
+
+                      <div className="mb-8">
+                        <h3 className="text-sm font-semibold text-gray-900 mb-3">Required Skills & Tags</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {job.tags.map(t => (
+                            <span key={t} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-sm">{t}</span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Match & Eligibility Feedback */}
+                      {hasScore && (
+                        <div className="mb-8 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                          <div className="flex items-center gap-4 mb-4">
+                            <MatchScoreCircle score={displayScore!} size={64} />
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-900">Match Score Analysis</h4>
+                              <p className="text-xs text-gray-500 mt-0.5">Based on your skills and recruiter priorities.</p>
+                            </div>
+                          </div>
+                          
+                          {job.feedback.length > 0 && (
+                            <div className="space-y-2 mt-4">
+                              {job.feedback.map((msg, idx) => (
+                                <div key={idx} className={`text-xs p-3 rounded-lg flex items-start gap-2 ${
+                                  msg.startsWith("✓") ? "bg-emerald-50 text-emerald-700" :
+                                  msg.startsWith("~") ? "bg-amber-50 text-amber-700" :
+                                  msg.startsWith("✗") ? "bg-red-50 text-red-700" : "bg-white border border-gray-200 text-gray-600"
+                                }`}>
+                                  {msg.startsWith("✓") ? <CheckCircle2 className="w-4 h-4 shrink-0" /> :
+                                   msg.startsWith("~") ? <AlertCircle className="w-4 h-4 shrink-0" /> :
+                                   msg.startsWith("✗") ? <AlertTriangle className="w-4 h-4 shrink-0" /> :
+                                   <AlertCircle className="w-4 h-4 shrink-0" />}
+                                  <span>{msg}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {applicationDetails?.status === "REJECTED_BY_UNIVERSITY" && applicationDetails?.universityRemarks && (
+                        <div className="mb-8 text-sm text-red-700 bg-red-50 rounded-xl p-4 flex items-start gap-3 border border-red-100">
+                          <AlertCircle className="w-5 h-5 shrink-0" />
+                          <div>
+                            <strong className="block mb-1">Rejected by University</strong>
+                            {applicationDetails.universityRemarks}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl sticky bottom-0 z-10">
+                      {isPlaced ? (
+                        <div className="flex items-center gap-2 text-sm text-indigo-600 bg-indigo-50 px-4 py-3 rounded-xl border border-indigo-100">
+                          <ShieldCheck className="w-5 h-5" />
+                          You are placed. Applications are disabled.
+                        </div>
+                      ) : !isApplied && !isDeadlinePassed ? (
+                        <div className="flex items-center gap-3">
+                          <GradientButton 
+                            className={`flex-1 ${applyingJob === job.id ? "opacity-70 pointer-events-none" : ""}`}
+                            onClick={() => { setShowConfirm(job.id); setSelectedJobId(null); }}
+                          >
+                            {applyingJob === job.id ? (
+                              <><Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Applying…</>
+                            ) : (
+                              <>Apply for this Job <ArrowRight className="w-4 h-4 inline ml-2" /></>
+                            )}
+                          </GradientButton>
+                          <GradientButton
+                            variant="outline"
+                            className={checkingJob === job.id ? "opacity-70 pointer-events-none" : ""}
+                            onClick={() => handleCheckEligibility(job.id)}
+                          >
+                            {checkingJob === job.id ? (
+                              <><Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Checking…</>
+                            ) : (
+                              <><Sparkles className="w-4 h-4 inline mr-2" /> {hasScore ? "Recheck Eligibility" : "Check Eligibility"}</>
+                            )}
+                          </GradientButton>
+                        </div>
+                      ) : isDeadlinePassed && !isApplied ? (
+                        <div className="flex items-center justify-center gap-2 text-sm text-amber-600 py-2">
+                          <Clock className="w-5 h-5" /> Application deadline has passed
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 flex items-center justify-center gap-2 text-sm text-emerald-600 py-2 font-medium bg-emerald-50 rounded-xl border border-emerald-100">
+                            <CheckCircle2 className="w-5 h-5" /> Application submitted
+                          </div>
+                          <GradientButton
+                            variant="outline"
+                            className={checkingJob === job.id ? "opacity-70 pointer-events-none flex-1" : "flex-1"}
+                            onClick={() => handleCheckEligibility(job.id)}
+                          >
+                            {checkingJob === job.id ? (
+                              <><Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Calculating…</>
+                            ) : (
+                              <><Sparkles className="w-4 h-4 inline mr-2" /> Check Skill Comparison</>
+                            )}
+                          </GradientButton>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Confirm Apply Modal */}
       <AnimatePresence>

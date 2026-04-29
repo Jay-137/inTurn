@@ -198,6 +198,23 @@ export function InstitutionDashboard() {
   const [activeNav, setActiveNav] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Role guard — redirect non-university users
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (!storedUser) {
+      navigate("/login");
+      return;
+    }
+    try {
+      const user = JSON.parse(storedUser);
+      if (user.role !== "UNIVERSITY") {
+        navigate("/login");
+      }
+    } catch {
+      navigate("/login");
+    }
+  }, [navigate]);
+
   // Placement Branches drill-down state (preserved when navigating away)
   const [placementPath, setPlacementPath] = useState<HierNode[]>([]);
   // Filters passed from Placement Branches → Eligible Students

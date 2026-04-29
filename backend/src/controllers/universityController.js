@@ -829,7 +829,13 @@ const updateJobStatus = async (req, res) => {
             data.rejectionReason = rejectionReason || 'Did not meet university criteria';
         }
         if (status === 'APPROVED' && universityDeadline) {
-            data.universityDeadline = new Date(universityDeadline);
+            const parsedDeadline = new Date(universityDeadline);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Normalize to start of day
+            if (parsedDeadline < today) {
+                return res.status(400).json({ error: "Deadline cannot be in the past." });
+            }
+            data.universityDeadline = parsedDeadline;
         }
 
         const job = await prisma.job.update({
@@ -1240,6 +1246,94 @@ const getShortlistedCompaniesForStudent = async (req, res) => {
     }
 };
 
+// [UNIVERSITY ONLY] Mass approve pending job postings
+const massApproveJobs = async (req, res) => {
+    try {
+        const { jobIds, universityDeadline } = req.body;
+        if (!Array.isArray(jobIds) || jobIds.length === 0) {
+            return res.status(400).json({ error: 'No job IDs provided.' });
+        }
+
+        const data = { approvalStatus: 'APPROVED' };
+        if (universityDeadline) {
+            const parsedDeadline = new Date(universityDeadline);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (parsedDeadline < today) {
+                return res.status(400).json({ error: 'Deadline cannot be in the past.' });
+            }
+            data.universityDeadline = parsedDeadline;
+        }
+
+        await prisma.job.updateMany({
+            where: { id: { in: jobIds }, approvalStatus: 'PENDING' },
+            data
+        });
+
+        // Notify recruiters for each approved job
+        const jobs = await prisma.job.findMany({
+            where: { id: { in: jobIds } },
+            include: { company: { include: { users: true } } }
+        });
+
+        const notifications = [];
+        for (const job of jobs) {
+            if (job.company && job.company.users) {
+                for (const u of job.company.users) {
+                    notifications.push({
+                        userId: u.id,
+                        message: `Your job posting "${job.title}" has been approved by the university.`,
+                        type: 'success'
+                    });
+                }
+            }
+        }
+        if (notifications.length > 0) {
+            await prisma.notification.createMany({ data: notifications });
+        }
+
+        res.status(200).json({ message: `${jobIds.length} job(s) approved successfully.` });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to mass approve jobs.' });
+    }
+};
+
+// [UNIVERSITY ONLY] Mass approve pending student registrations
+const massApproveStudents = async (req, res) => {
+    try {
+        const { studentIds } = req.body;
+        if (!Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ error: 'No student IDs provided.' });
+        }
+
+        const result = await prisma.student.updateMany({
+            where: { id: { in: studentIds }, registrationStatus: 'PENDING' },
+            data: { registrationStatus: 'APPROVED' }
+        });
+
+        // Notify each student
+        const students = await prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { userId: true }
+        });
+
+        const notifications = students.map(s => ({
+            userId: s.userId,
+            message: 'Your registration has been approved by the university.',
+            type: 'success'
+        }));
+        if (notifications.length > 0) {
+            await prisma.notification.createMany({ data: notifications });
+        }
+
+        res.status(200).json({ message: `${result.count} student(s) approved successfully.` });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to mass approve students.' });
+    }
+};
+
 module.exports = { 
     approveStudent,
     rejectStudent,
@@ -1272,5 +1366,7 @@ module.exports = {
     markStudentPlaced,
     unmarkStudentPlaced,
     getShortlistedCompaniesForStudent,
-    getAllCompaniesAndJobs
+    getAllCompaniesAndJobs,
+    massApproveJobs,
+    massApproveStudents
 };
