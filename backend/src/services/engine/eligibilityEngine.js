@@ -140,18 +140,29 @@ const SKILL_CATEGORIES = {
     'SOFTWARE DEVELOPMENT LIFE CYCLE':'CORE_CS',
 };
 
-const ACRONYMS = {
-    'DSA':  'DATA STRUCTURES AND ALGORITHMS',
-    'OOP':  'OBJECT ORIENTED PROGRAMMING',
-    'DBMS': 'DATABASE MANAGEMENT SYSTEM',
-    'OS':   'OPERATING SYSTEMS',
-    'CN':   'COMPUTER NETWORKS',
-    'AI':   'ARTIFICIAL INTELLIGENCE',
-    'ML':   'MACHINE LEARNING',
-    'DL':   'DEEP LEARNING',
-    'NLP':  'NATURAL LANGUAGE PROCESSING',
-    'SDLC': 'SOFTWARE DEVELOPMENT LIFE CYCLE'
+const SKILL_SYNONYMS = {
+    'GOLANG': 'GO',
+    'DOCKER': 'CONTAINERS',
+    'K8S': 'KUBERNETES',
+    'JS': 'JAVASCRIPT',
+    'TS': 'TYPESCRIPT',
+    'PY': 'PYTHON',
 };
+
+const ACRONYM_MAP = {
+    'DSA': 'DATA STRUCTURES AND ALGORITHMS',
+    'OOP': 'OBJECT ORIENTED PROGRAMMING',
+    'DBMS': 'DATABASE MANAGEMENT SYSTEM',
+    'OS': 'OPERATING SYSTEMS',
+    'CN': 'COMPUTER NETWORKS',
+    'AI': 'ARTIFICIAL INTELLIGENCE',
+    'ML': 'MACHINE LEARNING',
+    'DL': 'DEEP LEARNING',
+    'NLP': 'NATURAL LANGUAGE PROCESSING',
+    'SDLC': 'SOFTWARE DEVELOPMENT LIFE CYCLE',
+};
+
+
 
 const PRIORITY_WEIGHTS = {
     HIGH: 1.0,
@@ -170,13 +181,16 @@ const CATEGORY_MATCH_FACTOR = 0.5; // 50% credit for same-category match
  * For compound names like "Frontend (React/JS)", keeps structure intact.
  */
 function normalizeSkillName(name) {
-    if (!name) return "";
-    let n = name.trim().toUpperCase().replace(/&/g, 'AND');
+    let n = name.trim().toUpperCase()
+        .replace(/&/g, ' AND ')
+        .replace(/\s+/g, ' ')
+        .trim();
     
-    // Check for acronyms
-    if (ACRONYMS[n]) {
-        return ACRONYMS[n];
-    }
+    // Check for synonyms first
+    if (SKILL_SYNONYMS[n]) n = SKILL_SYNONYMS[n];
+    
+    // Check for acronym expansion
+    if (ACRONYM_MAP[n]) n = ACRONYM_MAP[n];
 
     if (!/[()\/]/.test(n)) {
         n = n.replace(/\./g, '');
@@ -186,10 +200,9 @@ function normalizeSkillName(name) {
         n = n.replace(/\s+/g, ' ').trim();
     }
     
-    // Check acronym again after stripping dots (e.g. "D.S.A.")
-    if (ACRONYMS[n]) {
-        return ACRONYMS[n];
-    }
+    // Final check after stripping dots/JS
+    if (ACRONYM_MAP[n]) n = ACRONYM_MAP[n];
+    if (SKILL_SYNONYMS[n]) n = SKILL_SYNONYMS[n];
 
     return n || name.trim().toUpperCase();
 }
@@ -411,6 +424,28 @@ function findBestMatch(requiredSkillName, studentSkillEntries) {
                 }
             }
         }
+
+        // 3. Acronym Match (Check if student's skill is the acronym of the requirement)
+        const reqTokens = reqNorm.split(' ').filter(t => t.length > 0 && !['AND', 'OF', 'THE', 'IN', 'FOR'].includes(t));
+        if (reqTokens.length >= 2) {
+            const generatedAcronym = reqTokens.map(t => t[0]).join('');
+            if (studentNorm === generatedAcronym) {
+                if (!bestExact || score > bestExact.score) {
+                    bestExact = { score, matchType: 'exact', matchedSkillName: name };
+                }
+            }
+        }
+        
+        // Check reverse acronym: requirement is "DSA", student has "Data Structures and Algorithms"
+        const studentTokens = studentNorm.split(' ').filter(t => t.length > 0 && !['AND', 'OF', 'THE', 'IN', 'FOR'].includes(t));
+        if (studentTokens.length >= 2) {
+            const studentAcronym = studentTokens.map(t => t[0]).join('');
+            if (reqNorm === studentAcronym) {
+                if (!bestExact || score > bestExact.score) {
+                    bestExact = { score, matchType: 'exact', matchedSkillName: name };
+                }
+            }
+        }
     }
 
     if (bestExact) return bestExact;
@@ -620,5 +655,7 @@ const evaluateEligibility = async (student, job, universityFilter = null) => {
 
 module.exports = {
     evaluateEligibility,
-    branchesMatch
+    branchesMatch,
+    normalizeSkillName,
+    findBestMatch
 };
