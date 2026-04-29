@@ -15,6 +15,7 @@ ALTER TABLE `Job` ADD COLUMN `approvalStatus` VARCHAR(191) NOT NULL DEFAULT 'PEN
     ADD COLUMN `tags` JSON NULL,
     ADD COLUMN `targetBranches` JSON NULL,
     ADD COLUMN `targetYears` JSON NULL,
+    ADD COLUMN `rejectionReason` VARCHAR(191) NULL,
     ADD COLUMN `type` VARCHAR(191) NULL;
 
 -- AlterTable
