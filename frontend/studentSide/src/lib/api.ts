@@ -81,7 +81,13 @@ export interface StudentProfile {
   branch?: string;
   placementStatus: string;
   user: { name: string; email: string };
-  university: { name: string };
+  university: { 
+    name: string;
+    filters?: Array<{
+      minGlobalCgpa?: number;
+      maxGlobalBacklogs?: number;
+    }>;
+  };
   academicUnit: { name: string; type: string };
   skills: Array<{
     id: number;

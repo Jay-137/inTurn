@@ -179,8 +179,8 @@ export function CandidateDashboard() {
     ? [
         {
           label: "CGPA",
-          status: studentProfile.cgpa >= 7.0,
-          detail: `${studentProfile.cgpa.toFixed(1)} / 10 ${studentProfile.cgpa >= 7.0 ? "(eligible)" : "(below avg threshold)"}`,
+          status: studentProfile.cgpa >= (studentProfile.university?.filters?.[0]?.minGlobalCgpa ?? 7.0),
+          detail: `${studentProfile.cgpa.toFixed(1)} / 10 ${studentProfile.cgpa >= (studentProfile.university?.filters?.[0]?.minGlobalCgpa ?? 7.0) ? "(eligible)" : "(below university threshold)"}`,
         },
         {
           label: "Registration",
@@ -198,11 +198,11 @@ export function CandidateDashboard() {
         },
         {
           label: "Active Backlogs",
-          status: studentProfile.backlogCount === 0,
+          status: studentProfile.backlogCount <= (studentProfile.university?.filters?.[0]?.maxGlobalBacklogs ?? 0),
           detail:
             studentProfile.backlogCount === 0
               ? "No active backlogs"
-              : `${studentProfile.backlogCount} backlog(s)`,
+              : `${studentProfile.backlogCount} backlog(s) ${studentProfile.backlogCount <= (studentProfile.university?.filters?.[0]?.maxGlobalBacklogs ?? 0) ? "(eligible)" : "(exceeds threshold)"}`,
         },
       ]
     : [

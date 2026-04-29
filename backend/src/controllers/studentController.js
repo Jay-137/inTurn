@@ -164,7 +164,9 @@ const getProfile = async (req, res) => {
             where: { userId: requestedUserId },
             include: {
                 user: { select: { name: true, email: true } },
-                university: { select: { name: true } },
+                university: { 
+                    include: { filters: true } 
+                },
                 academicUnit: { select: { name: true, type: true } },
                 coreSubjects: true,
                 skills: { include: { skill: true } },
