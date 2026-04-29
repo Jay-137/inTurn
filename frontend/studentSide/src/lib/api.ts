@@ -130,6 +130,7 @@ export interface StudentProfile {
   }>;
   applications?: Application[];
   videoResumeUrl?: string;
+  resumeUrl?: string;
 }
 
 export interface Job {
