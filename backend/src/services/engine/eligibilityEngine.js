@@ -653,9 +653,49 @@ const evaluateEligibility = async (student, job, universityFilter = null) => {
     };
 };
 
+/**
+ * Recalculates and updates match scores for all active applications of a student.
+ * Useful after a student updates their skills or profile.
+ */
+const recalculateApplicationScores = async (studentId) => {
+    try {
+        const student = await prisma.student.findUnique({
+            where: { id: studentId },
+            include: { academicUnit: true }
+        });
+
+        if (!student) return;
+
+        // Fetch all applications that are still in review or active
+        const applications = await prisma.application.findMany({
+            where: {
+                studentId: studentId,
+                status: { notIn: ['REJECTED_BY_UNIVERSITY', 'REJECTED_BY_RECRUITER'] }
+            },
+            include: { job: true }
+        });
+
+        for (const app of applications) {
+            // Get latest score
+            const { matchScore } = await evaluateEligibility(student, app.job);
+            
+            // Update the application record
+            await prisma.application.update({
+                where: { id: app.id },
+                data: { matchScore }
+            });
+        }
+        
+        console.log(`Recalculated scores for ${applications.length} applications of student ID ${studentId}`);
+    } catch (error) {
+        console.error(`Failed to recalculate application scores for student ${studentId}:`, error);
+    }
+};
+
 module.exports = {
     evaluateEligibility,
     branchesMatch,
     normalizeSkillName,
-    findBestMatch
+    findBestMatch,
+    recalculateApplicationScores
 };

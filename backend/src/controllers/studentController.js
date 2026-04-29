@@ -3,6 +3,7 @@ const leetcodeService = require('../services/integrations/leetcode.service');
 const codeforcesService = require('../services/integrations/codeforces.service');
 const githubService = require('../services/integrations/github.service');
 const { generateSkillVector } = require('../services/engine/skillVectorGenerator');
+const { recalculateApplicationScores } = require('../services/engine/eligibilityEngine');
 
 const PLACEMENT_BRANCH_UNIT_TYPES = new Set(['DEPARTMENT', 'STREAM', 'BRANCH', 'PROGRAM', 'PROGRAMME', 'COURSE']);
 
@@ -357,8 +358,10 @@ const generateSkills = async (req, res) => {
                     score: score
                 }
             });
-            savedSkills.push(ss);
-        }
+            }
+        
+        // Trigger match score recalculation for all active applications
+        recalculateApplicationScores(student.id);
 
         res.json({ message: "Skills generated successfully", skills: skillMap });
     } catch (error) {
