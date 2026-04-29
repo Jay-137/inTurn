@@ -6,6 +6,8 @@ import {
 import { useTheme } from "./theme-context";
 import type { EligibleFilters } from "./eligible-students";
 
+const API_BASE = "https://inturn-5efo.onrender.com/api";
+
 /* ─── Types ─── */
 export type HierNode = {
   id: string;
@@ -209,7 +211,7 @@ export function PlacementBranches({
   const [branchSearch, setBranchSearch] = useState("");
 
   useEffect(() => {
-    fetch("http://localhost:3000/api/university/academic-units/tree", {
+    fetch(`${API_BASE}/university/academic-units/tree`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
     })
       .then(res => res.ok ? res.json() : { tree: [] })

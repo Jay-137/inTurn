@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { AcademicUnitSelector, collectDescendantNames, findNodeByLabel } from "./academic-unit-selector";
 import type { AcademicNode } from "./academic-unit-selector";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from "recharts";
-const API_BASE = "http://localhost:3000/api";
+// const API_BASE = "http://localhost:3000/api";
+const API_BASE = "https://inturn-5efo.onrender.com/api";
 
 const getStyles = (dk: boolean) => ({
   card: `rounded-xl border ${dk ? "bg-[#111116] border-white/10" : "bg-white border-gray-300"} p-6`,

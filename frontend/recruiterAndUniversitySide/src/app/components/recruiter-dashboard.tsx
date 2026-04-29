@@ -12,6 +12,8 @@ import { PostJob } from "./post-job";
 import { JobPostings } from "./job-postings";
 import { Shortlisted, PlacementAnalytics, JobApplicants } from "./recruiter-subpages";
 
+const API_BASE = "https://inturn-5efo.onrender.com/api";
+
 /* ─── Sidebar Config ─── */
 const sidebarNav = [
   { label: "Dashboard", icon: LayoutDashboard, id: "dashboard" },
@@ -201,7 +203,7 @@ export function RecruiterDashboard() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch("http://localhost:3000/api/companies/notifications", {
+      const res = await fetch(`${API_BASE}/companies/notifications`, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
       });
       if (res.ok) {
@@ -215,7 +217,7 @@ export function RecruiterDashboard() {
 
   const markRead = async (id: number) => {
     try {
-      await fetch(`http://localhost:3000/api/companies/notifications/${id}/read`, {
+      await fetch(`${API_BASE}/companies/notifications/${id}/read`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
       });
@@ -225,7 +227,7 @@ export function RecruiterDashboard() {
 
   const clearAllNotifications = async () => {
     try {
-      await fetch(`http://localhost:3000/api/companies/notifications`, {
+      await fetch(`${API_BASE}/companies/notifications`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
       });
@@ -241,7 +243,7 @@ export function RecruiterDashboard() {
     const fetchDashboard = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:3000/api/companies/dashboard", {
+        const res = await fetch(`${API_BASE}/companies/dashboard`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
@@ -357,12 +359,12 @@ export function RecruiterDashboard() {
               }} 
               onWithdraw={async (jobId) => {
                 try {
-                  const res = await fetch(`http://localhost:3000/api/companies/jobs/${jobId}/withdraw`, {
+                  const res = await fetch(`${API_BASE}/companies/jobs/${jobId}/withdraw`, {
                     method: 'PUT',
                     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
                   });
                   if (res.ok) {
-                    const dRes = await fetch("http://localhost:3000/api/companies/dashboard", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+                    const dRes = await fetch(`${API_BASE}/companies/dashboard`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
                     if (dRes.ok) setDashboardData(await dRes.json());
                   }
                 } catch (e) { console.error(e); }

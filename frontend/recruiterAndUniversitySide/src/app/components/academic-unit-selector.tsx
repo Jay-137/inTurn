@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown, X, Building2, Layers } from "lucide-react";
 
-const API_BASE = "http://localhost:3000/api";
+// const API_BASE = "http://localhost:3000/api";
+const API_BASE = "https://inturn-5efo.onrender.com/api";
 function getToken() { return localStorage.getItem("token") || ""; }
 
 type AcademicNode = {

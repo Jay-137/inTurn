@@ -6,6 +6,8 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Navbar } from "./navbar";
 
+const API_BASE = "https://inturn-5efo.onrender.com/api";
+
 export function RegisterCompany() {
   const { theme } = useTheme();
   const dk = theme === "dark";
@@ -29,7 +31,7 @@ export function RegisterCompany() {
     setLoading(true);
     try {
       // 1. Create Recruiter Account
-      const res = await fetch("http://localhost:3000/api/auth/register", {
+      const res = await fetch(`${API_BASE}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password, role: "RECRUITER" }),
@@ -39,7 +41,7 @@ export function RegisterCompany() {
       if (!res.ok) throw new Error(data.error || "Registration failed");
 
       // 2. Auto Login to get token for next step
-      const loginRes = await fetch("http://localhost:3000/api/auth/login", {
+      const loginRes = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -68,7 +70,7 @@ export function RegisterCompany() {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:3000/api/companies/register", {
+      const res = await fetch(`${API_BASE}/companies/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

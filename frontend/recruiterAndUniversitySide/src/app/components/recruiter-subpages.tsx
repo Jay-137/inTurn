@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { Search, Filter, Download, Star, BarChart3, TrendingUp, Users, CheckCircle2, Play, X, Video, ArrowLeft, Loader2, FileText, ExternalLink, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE = "http://localhost:3000/api";
+// const API_BASE = "http://localhost:3000/api";
+const API_BASE = "https://inturn-5efo.onrender.com/api";
 function getToken() { return localStorage.getItem("token") || ""; }
 
 const getStyles = (dk: boolean) => ({
@@ -578,7 +579,7 @@ export function PlacementAnalytics() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await fetch("http://localhost:3000/api/companies/dashboard", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+        const res = await fetch(`${API_BASE}/companies/dashboard`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
         if (res.ok) {
           const data = await res.json();
           const funnel = data.funnel || { totalApplicants: 0, shortlistedCount: 0, placedCount: 0 };

@@ -4,6 +4,8 @@ import { motion } from "motion/react";
 import { useTheme } from "./theme-context";
 import { useNavigate } from "react-router";
 
+const API_BASE = "https://inturn-5efo.onrender.com/api";
+
 export function LoginPage() {
   const { theme, toggle } = useTheme();
   const dk = theme === "dark";
@@ -26,7 +28,7 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:3000/api/auth/login", {
+      const response = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

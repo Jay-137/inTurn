@@ -1,6 +1,6 @@
 // Central API service — all calls to the backend go through here
 // Base URL: update this to your backend's address
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
+const BASE_URL = import.meta.env.VITE_API_URL || "https://inturn-5efo.onrender.com/api";
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 export const getToken = (): string | null => localStorage.getItem("token");

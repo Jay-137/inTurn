@@ -7,6 +7,8 @@ import {
 import { useTheme } from "./theme-context";
 import { AcademicUnitSelector } from "./academic-unit-selector";
 
+const API_BASE = "https://inturn-5efo.onrender.com/api";
+
 const steps = ["Job Details", "Eligibility Criteria", "Skill Requirements", "Review & Post"];
 
 /* ─── Multi-Select Dropdown ─── */
@@ -218,7 +220,7 @@ export function PostJob({ onNavigate }: { onNavigate: (id: string) => void }) {
           priority: PRIORITY_MAP[s.priority]
         }))
       };
-      const res = await fetch("http://localhost:3000/api/companies/jobs", {
+      const res = await fetch(`${API_BASE}/companies/jobs`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

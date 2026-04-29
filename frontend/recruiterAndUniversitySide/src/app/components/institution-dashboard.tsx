@@ -14,6 +14,8 @@ import { PlacementBranches } from "./placement-branches";
 import type { HierNode } from "./placement-branches";
 import { AllStudents, AllJobs, PendingJobs, AllApplications, PendingApplications, RecruitersPage, SimplePlaceholder, DataRequestsPage, SettingsPage, StudentAnalytics, RecruiterAnalytics, AcademicUnitsPage, CertificationsReview } from "./institution-subpages";
 
+const API_BASE = "https://inturn-5efo.onrender.com/api";
+
 /* ─── Sidebar Nav Config ─── */
 type NavItem = {
   label: string;
@@ -240,7 +242,7 @@ export function InstitutionDashboard() {
     const fetchDashboard = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:3000/api/university/dashboard", {
+        const res = await fetch(`${API_BASE}/university/dashboard`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
