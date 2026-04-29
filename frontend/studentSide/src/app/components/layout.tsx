@@ -169,7 +169,7 @@ export function Layout() {
       {/* Main */}
       <div className="flex-1 ml-[260px]">
         {/* Top bar */}
-        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-border px-8 py-3 flex items-center justify-between">
+        <header className="sticky top-0 z-11 bg-white/80 backdrop-blur-md border-b border-border px-8 py-3 flex items-center justify-between">
           <div>
             <h1 className="text-lg text-gray-900">
               {studentNav.find((n) => n.path === location.pathname)?.label ||

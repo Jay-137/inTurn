@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, ChevronRight, Loader2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useApp } from "./app-context";
+import { useApp, PlatformKey } from "./app-context";
 import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid
